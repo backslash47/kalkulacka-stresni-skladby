@@ -160,7 +160,17 @@ function ProfileChart({ result }: { result: ReturnType<typeof calculateProfile> 
   );
 }
 
-function MonthlyBalanceChart({ result }: { result: ReturnType<typeof calculateMonthlyBalance> }) {
+type MonthlyChartData = {
+  peakStoredGm2: number;
+  months: Array<{
+    month: string;
+    condensationGm2: number;
+    evaporationGm2: number;
+    storedGm2: number;
+  }>;
+};
+
+function MonthlyBalanceChart({ result }: { result: MonthlyChartData }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -350,6 +360,7 @@ export default function RoofCalculator() {
   const [variants, setVariants] = useState<Variant[]>(cloneDefaultVariants);
   const [activeId, setActiveId] = useState("with-wool");
   const [materialIndex, setMaterialIndex] = useState(3);
+  const [monthlyViewId, setMonthlyViewId] = useState("all");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -397,6 +408,19 @@ export default function RoofCalculator() {
     () => calculateMonthlyBalance(activeVariant?.layers ?? [], monthlyClimate, surfaces),
     [activeVariant, monthlyClimate, surfaces],
   );
+  const monthlyViews = useMemo(() => [
+    {
+      id: "all",
+      label: "Celá skladba",
+      months: monthlyResult.months,
+      annualCondensationGm2: monthlyResult.annualCondensationGm2,
+      annualEvaporationGm2: monthlyResult.annualEvaporationGm2,
+      annualChangeGm2: monthlyResult.annualChangeGm2,
+      peakStoredGm2: monthlyResult.peakStoredGm2,
+    },
+    ...monthlyResult.locations,
+  ], [monthlyResult]);
+  const monthlyView = monthlyViews.find((view) => view.id === monthlyViewId) ?? monthlyViews[0];
 
   const updateCondition = (key: keyof Conditions, value: number) => {
     setConditions((current) => ({ ...current, [key]: value }));
@@ -491,18 +515,23 @@ export default function RoofCalculator() {
   };
 
   const exportMonthlyCsv = () => {
+    const exportViews = [
+      { id: "all", label: "Celá skladba", months: monthlyResult.months },
+      ...monthlyResult.locations,
+    ];
     const rows = [
-      ["Měsíc", "Ti [°C]", "RHi [%]", "Te [°C]", "RHe [%]", "Kondenzace [g/m²]", "Odpaření [g/m²]", "Nahromaděno [g/m²]"],
-      ...monthlyResult.months.map((month) => [
-        month.month,
-        format(month.insideTemperature, 1),
-        format(month.insideHumidity, 1),
-        format(month.outsideTemperature, 1),
-        format(month.outsideHumidity, 1),
-        format(month.condensationGm2, 2),
-        format(month.evaporationGm2, 2),
-        format(month.storedGm2, 2),
-      ]),
+      ["Místo", "Měsíc", "Ti [°C]", "RHi [%]", "Te [°C]", "RHe [%]", "Kondenzace [g/m²]", "Odpaření [g/m²]", "Nahromaděno [g/m²]"],
+      ...exportViews.flatMap((view) => view.months.map((month) => [
+          view.label,
+          month.month,
+          format(month.insideTemperature, 1),
+          format(month.insideHumidity, 1),
+          format(month.outsideTemperature, 1),
+          format(month.outsideHumidity, 1),
+          format(month.condensationGm2, 2),
+          format(month.evaporationGm2, 2),
+          format(month.storedGm2, 2),
+        ])),
     ];
     download(
       `mesicni-bilance-${activeVariant.id}.csv`,
@@ -542,10 +571,12 @@ export default function RoofCalculator() {
       : { label: "Bez průsečíku", detail: "Teplota zůstává nad rosným bodem ve všech vrstvách." };
 
   const monthlyStatusCopy = monthlyResult.status === "risk"
-    ? { label: "Vlhkost mezi roky narůstá", detail: "Výpočtová rovina nemá v ročním cyklu dostatečnou kapacitu vyschnout." }
+    ? { label: "Vlhkost mezi roky narůstá", detail: "Jedno nebo více kondenzačních míst nemá v ročním cyklu dostatečnou kapacitu vyschnout." }
     : monthlyResult.status === "warning"
-      ? { label: "Sezónně kondenzuje, ale vyschne", detail: "Během chladné části roku vzniká kondenzát, který se v ročním cyklu odpaří." }
-      : { label: "Bez měsíční kondenzace", detail: "V žádném měsíci nevzniká na posuzovaných rozhraních kladná bilance kondenzace." };
+      ? monthlyResult.fullyDries
+        ? { label: "Sezónně kondenzuje, ale vyschne", detail: "Během chladné části roku vzniká kondenzát, který se v ročním cyklu zcela odpaří." }
+        : { label: "Sezónně kondenzuje, bilance je vyrovnaná", detail: "Mezi roky vlhkost nenarůstá, ale model v žádném měsíci neukazuje úplné vyschnutí celé skladby." }
+      : { label: "Bez měsíční kondenzace", detail: "V žádném měsíci nevzniká v posuzované skladbě kladná bilance kondenzace." };
 
   return (
     <main>
@@ -725,39 +756,67 @@ export default function RoofCalculator() {
           <div className="monthly-actions">
             <button className="text-button" type="button" onClick={() => setMonthlyClimate(cloneDefaultMonthlyClimate())}>Výchozí Brno</button>
             <button className="outline-button" type="button" onClick={applyIndoorConditionsToYear}>Vnitřní podle 01</button>
-            <button className="outline-button" type="button" onClick={exportMonthlyCsv} disabled={!monthlyResult.governingPlane}>Stáhnout CSV</button>
+            <button className="outline-button" type="button" onClick={exportMonthlyCsv} disabled={!monthlyResult.hasCalculation}>Stáhnout CSV</button>
           </div>
         </div>
 
-        {monthlyResult.governingPlane ? (
+        {monthlyResult.hasCalculation ? (
           <>
             <div className={`monthly-callout ${monthlyResult.status}`}>
               <div><span className="summary-label">Roční vyhodnocení</span><strong>{monthlyStatusCopy.label}</strong><p>{monthlyStatusCopy.detail}</p></div>
               <dl>
-                <div><dt>Rozhodující rozhraní</dt><dd>{monthlyResult.governingPlane.label}</dd></div>
-                <div><dt>Poloha od interiéru</dt><dd>{format(monthlyResult.governingPlane.positionMm, 0)} mm</dd></div>
+                <div><dt>Rozhodující místo</dt><dd>{monthlyResult.governingPlane?.label ?? "Žádné kondenzační místo"}</dd></div>
+                <div><dt>Poloha od interiéru</dt><dd>{monthlyResult.governingPlane ? `${format(monthlyResult.governingPlane.positionMm, 0)} mm` : "—"}</dd></div>
               </dl>
             </div>
 
             <div className="monthly-metrics">
-              <article><span><HelpTerm label="Vznik kondenzátu" help="Součet nově vzniklého kondenzátu za měsíce, ve kterých má bilance kladnou hodnotu, na rozhodujícím rozhraní." align="left" /></span><strong>{format(monthlyResult.annualCondensationGm2, 1)}</strong><small>g/m² za cyklus</small></article>
-              <article><span><HelpTerm label="Odpaření" help="Část dříve nahromaděného kondenzátu, kterou mohou příznivé měsíce skutečně odpařit." align="left" /></span><strong>{format(monthlyResult.annualEvaporationGm2, 1)}</strong><small>g/m² za cyklus</small></article>
-              <article><span><HelpTerm label="Maximum ve skladbě" help="Nejvyšší množství kondenzátu současně nahromaděné na rozhodujícím rozhraní během ročního cyklu." align="left" /></span><strong>{format(monthlyResult.peakStoredGm2, 1)}</strong><small>g/m²</small></article>
+              <article><span><HelpTerm label="Vznik kondenzátu" help="Součet nově vzniklého kondenzátu ve všech vypočtených místech skladby za celý roční cyklus." align="left" /></span><strong>{format(monthlyResult.annualCondensationGm2, 1)}</strong><small>g/m² za cyklus</small></article>
+              <article><span><HelpTerm label="Odpaření" help="Součet skutečně odpařeného dříve nahromaděného kondenzátu ze všech míst skladby." align="left" /></span><strong>{format(monthlyResult.annualEvaporationGm2, 1)}</strong><small>g/m² za cyklus</small></article>
+              <article><span><HelpTerm label="Maximum ve skladbě" help="Nejvyšší celkové množství kondenzátu současně uložené ve všech místech skladby během ročního cyklu." align="left" /></span><strong>{format(monthlyResult.peakStoredGm2, 1)}</strong><small>g/m²</small></article>
               <article className={monthlyResult.status === "risk" ? "danger-metric" : "safe-metric"}><span><HelpTerm label="Roční přírůstek" help="Množství vlhkosti, které po započtení vysychání přibude za jeden celý rok. Kladná hodnota znamená hromadění mezi roky." align="right" /></span><strong>{format(Math.max(0, monthlyResult.annualPotentialGm2), 1)}</strong><small>g/m² za rok</small></article>
+            </div>
+
+            <div className="monthly-locations">
+              <div className="monthly-locations-copy">
+                <h3>Místa kondenzace a vysychání</h3>
+                <p>Výpočet rozlišuje jednotlivé oblasti a řeší jejich vzájemný vliv na tok vodní páry. Kliknutím vyberete detail.</p>
+              </div>
+              <div className="layer-table-wrap">
+                <table className="result-table location-table">
+                  <thead><tr><th>Místo</th><th><HelpTerm label="Poloha" help="Bod nebo rozsah, ve kterém model zachytil kondenzaci, měřený od interiéru." /></th><th><HelpTerm label="Vznik" help="Kondenzát vzniklý v tomto místě za roční cyklus." /></th><th><HelpTerm label="Odpaření" help="Kondenzát odpařený z tohoto místa za roční cyklus." /></th><th><HelpTerm label="Maximum" help="Nejvyšší množství vlhkosti uložené v tomto místě." /></th><th><HelpTerm label="Roční změna" help="Rozdíl uložené vlhkosti na konci a začátku ročního cyklu." /></th><th>Výsledek</th></tr></thead>
+                  <tbody>{monthlyResult.locations.length > 0 ? monthlyResult.locations.map((location) => (
+                    <tr key={location.id} className={monthlyView.id === location.id ? "selected-location" : ""}>
+                      <td><button type="button" className="location-select-button" onClick={() => setMonthlyViewId(location.id)}>{location.label}</button></td>
+                      <td>{Math.abs(location.positionEndMm - location.positionStartMm) > 0.1 ? `${format(location.positionStartMm, 0)}–${format(location.positionEndMm, 0)} mm` : `${format(location.positionMm, 0)} mm`}</td>
+                      <td className="condensation-value">{format(location.annualCondensationGm2, 2)} g/m²</td>
+                      <td className="evaporation-value">{format(location.annualEvaporationGm2, 2)} g/m²</td>
+                      <td>{format(location.peakStoredGm2, 2)} g/m²</td>
+                      <td>{format(location.annualChangeGm2, 2)} g/m²</td>
+                      <td><span className={`result-badge ${location.status}`}>{location.status === "risk" ? "Narůstá" : location.fullyDries ? "Vyschne v cyklu" : "Bilance vyrovnaná"}</span></td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan={7} className="no-location">Měsíční model v této skladbě nenašel kondenzaci.</td></tr>
+                  )}</tbody>
+                </table>
+              </div>
             </div>
 
             <div className="monthly-chart-panel">
               <div className="monthly-chart-copy">
-                <div><h3>Průběh během roku</h3><p>Sloupce ukazují měsíční kondenzaci a využité odpaření, tmavá křivka množství zadržené na rozhodujícím rozhraní.</p></div>
+                <div><h3>Průběh během roku · {monthlyView.label}</h3><p>Sloupce ukazují měsíční kondenzaci a skutečně využité odpaření, tmavá křivka množství zadržené na konci měsíce.</p></div>
                 <div className="legend"><span className="condensation-bar">Kondenzace</span><span className="evaporation-bar">Odpaření</span><span className="stored-line">Nahromaděno</span></div>
               </div>
-              <MonthlyBalanceChart result={monthlyResult} />
+              <div className="monthly-view-tabs" role="tablist" aria-label="Zobrazené místo měsíční bilance">
+                {monthlyViews.map((view) => <button key={view.id} type="button" role="tab" aria-selected={monthlyView.id === view.id} className={monthlyView.id === view.id ? "active" : ""} onClick={() => setMonthlyViewId(view.id)}>{view.label}</button>)}
+              </div>
+              <MonthlyBalanceChart result={monthlyView} />
             </div>
 
             <div className="layer-table-wrap">
               <table className="result-table monthly-table">
-                <thead><tr><th>Měsíc</th><th><HelpTerm label="Ti [°C]" help="Průměrná vnitřní teplota v daném měsíci." /></th><th><HelpTerm label="RHi [%]" help="Průměrná relativní vlhkost vnitřního vzduchu v daném měsíci." /></th><th><HelpTerm label="Te [°C]" help="Průměrná venkovní teplota v daném měsíci." /></th><th><HelpTerm label="RHe [%]" help="Průměrná relativní vlhkost venkovního vzduchu v daném měsíci." /></th><th><HelpTerm label="Kondenzace" help="Množství nově vzniklého kondenzátu v daném měsíci na rozhodujícím rozhraní." /></th><th><HelpTerm label="Odpaření" help="Množství dříve nahromaděného kondenzátu, které se v daném měsíci odpaří." /></th><th><HelpTerm label="Nahromaděno" help="Množství kondenzátu, které na rozhodujícím rozhraní zůstává na konci daného měsíce." align="right" /></th></tr></thead>
-                <tbody>{monthlyResult.months.map((month) => (
+                <thead><tr><th>Měsíc</th><th><HelpTerm label="Ti [°C]" help="Průměrná vnitřní teplota v daném měsíci." /></th><th><HelpTerm label="RHi [%]" help="Průměrná relativní vlhkost vnitřního vzduchu v daném měsíci." /></th><th><HelpTerm label="Te [°C]" help="Průměrná venkovní teplota v daném měsíci." /></th><th><HelpTerm label="RHe [%]" help="Průměrná relativní vlhkost venkovního vzduchu v daném měsíci." /></th><th><HelpTerm label="Kondenzace" help="Množství nově vzniklého kondenzátu v daném měsíci ve zvoleném pohledu." /></th><th><HelpTerm label="Odpaření" help="Množství dříve nahromaděného kondenzátu, které se ve zvoleném pohledu v daném měsíci odpaří." /></th><th><HelpTerm label="Nahromaděno" help="Množství kondenzátu, které ve zvoleném pohledu zůstává na konci daného měsíce." align="right" /></th></tr></thead>
+                <tbody>{monthlyView.months.map((month) => (
                   <tr key={month.id} className={month.storedGm2 > 0.001 ? "wet-month" : ""}>
                     <td>{month.month}</td>
                     <td><input className="climate-input" aria-label={`Vnitřní teplota ${month.month}`} type="number" step="0.1" min="-30" max="50" value={month.insideTemperature} onChange={(event) => updateMonthlyClimate(month.id, "insideTemperature", Number(event.target.value))} /></td>
@@ -780,7 +839,7 @@ export default function RoofCalculator() {
         )}
 
         <div className="monthly-note">
-          <p><strong>Jak číst výsledek:</strong> jednotlivá rozhraní se prověří samostatně a zobrazí se nejnepříznivější z nich. U vysychající skladby se bilance ustálí přes hranici prosinec/leden; kladný roční přírůstek znamená hromadění mezi roky.</p>
+          <p><strong>Jak číst výsledek:</strong> všechna nasycená místa se v každém měsíci řeší současně a společně mění tlakový profil. Vlhkost se vede odděleně pro každé místo do dalších měsíců; kladný roční přírůstek znamená hromadění mezi roky.</p>
           <p><strong>Zdroj výchozího klimatu:</strong> NASA POWER, měsíční klimatologie 2001–2020 pro Brno (49,195° N; 16,607° E). Vnitřní podmínky jsou uživatelský předpoklad, nikoli klimatická data.</p>
         </div>
       </section>
@@ -788,7 +847,7 @@ export default function RoofCalculator() {
       <section className="method-panel">
         <h2>Co tento výpočet znamená</h2>
         <div className="method-columns">
-          <p><strong>Umí:</strong> jednorozměrný profil teploty a vodní páry, rosný bod, U a zjednodušenou měsíční bilanci difuzní kondenzace a odpařování.</p>
+          <p><strong>Umí:</strong> jednorozměrný profil teploty a vodní páry, rosný bod, U a propojenou měsíční bilanci difuzní kondenzace a odpařování ve více místech.</p>
           <p><strong>Neumí:</strong> déšť, sluneční a dlouhovlnné záření, zabudovanou vlhkost, kapilární transport, proudění netěsnostmi ani přesné 2D křížení trámů.</p>
           <p><strong>Použití:</strong> vhodné pro porovnání variant a odhalení problémových skladeb. Pro realizační projekt ověřte kritickou skladbu dynamickým hygrotermickým výpočtem.</p>
         </div>

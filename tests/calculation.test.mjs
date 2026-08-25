@@ -119,6 +119,32 @@ test("balances seasonal condensation and drying across the calendar boundary", (
   assert.ok(result.months.every((month) => month.storedGm2 >= 0));
 });
 
+test("separates simultaneous condensation locations and balances them as one coupled profile", () => {
+  const extremeYear = brnoClimate.map((month) => ({ ...month, ...conditions }));
+  const result = calculateMonthlyBalance([
+    ...interior,
+    layer("wool", "Vata", 180, 0.035, 1),
+    layer("air", "Dutina", 220, 0.15, 1, 0.16, 0.22),
+    ...exterior,
+  ], extremeYear);
+
+  assert.equal(result.model, "coupled-multiplane");
+  assert.equal(result.status, "risk");
+  assert.ok(result.locations.length >= 3);
+  assert.ok(result.locations.some((location) => location.label.includes("Vata")));
+  assert.ok(result.locations.some((location) => location.label === "Rozhraní PIR / PVC"));
+  assert.ok(Math.abs(
+    result.annualCondensationGm2
+      - result.locations.reduce((total, location) => total + location.annualCondensationGm2, 0),
+  ) < 0.001);
+  assert.ok(Math.abs(
+    result.annualCondensationGm2 - result.annualEvaporationGm2 - result.annualChangeGm2,
+  ) < 0.001);
+  assert.ok(result.locations.every((location) => (
+    location.months.every((month) => month.storedGm2 >= 0)
+  )));
+});
+
 test("marks a construction with a positive annual moisture balance as risk", () => {
   const coldYear = brnoClimate.map((month) => ({
     ...month,
