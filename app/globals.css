@@ -152,6 +152,7 @@ select { border: 1px solid var(--line); border-radius: 9px; padding: .58rem 2rem
 .metric-row article > span { grid-column: 1 / -1; color: var(--ink-soft); font-size: .72rem; font-weight: 740; }
 .metric-row strong { font-family: Georgia, serif; font-size: 2rem; font-weight: 500; font-variant-numeric: tabular-nums; }
 .metric-row small { padding-bottom: .3rem; color: var(--ink-soft); }
+.metric-row em { grid-column: 1 / -1; color: var(--risk); font-size: .64rem; font-style: normal; font-weight: 760; }
 .metric-row .danger-metric strong { color: var(--risk); }
 .metric-row .safe-metric strong { color: var(--safe); }
 
@@ -174,7 +175,9 @@ select { border: 1px solid var(--line); border-radius: 9px; padding: .58rem 2rem
 .finding-panel dl { width: 100%; margin: 1.15rem 0; }
 .finding-panel dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: .8rem; padding: .62rem 0; border-bottom: 1px solid var(--line); }
 .finding-panel dt { color: var(--ink-soft); font-size: .68rem; }
-.finding-panel dd { margin: 0; font-weight: 760; font-variant-numeric: tabular-nums; }
+.finding-panel dd { max-width: 60%; margin: 0; font-weight: 760; font-variant-numeric: tabular-nums; line-height: 1.35; text-align: right; }
+.finding-panel .material-model-note { margin-top: .25rem; padding: .7rem; border-radius: 9px; background: var(--panel-muted); font-size: .67rem; }
+.finding-panel .material-model-note strong { color: var(--ink); }
 .finding-panel .fine-print { margin-top: auto; padding-top: 1rem; font-size: .68rem; }
 
 .interfaces-panel { margin-top: 1.25rem; }

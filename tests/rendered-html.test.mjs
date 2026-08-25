@@ -38,5 +38,8 @@ test("server renders the roof calculator", async () => {
   assert.match(html, /Klimatické zkratky/);
   assert.match(html, /Průměrná venkovní teplota v daném měsíci/);
   assert.match(html, /Faktor difuzního odporu vůči vodní páře/);
+  assert.match(html, /Kondenzační potenciál/);
+  assert.match(html, /Relativní vlhkost se nezobrazuje nad 100 %/);
+  assert.doesNotMatch(html, /Maximum nasycení/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });

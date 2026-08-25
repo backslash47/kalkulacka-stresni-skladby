@@ -96,6 +96,10 @@ test("keeps the OSB warm in the no-wool field while finding the outer risk", () 
   const afterOsb = result.interfaces.find((point) => point.label === "Za vrstvou: OSB");
   assert.ok(afterOsb.temperature > afterOsb.dewPoint);
   assert.equal(result.firstRisk.layerId, "pir");
+  assert.equal(result.peakRisk.locationLabel, "rozhraní PIR / PVC");
+  assert.ok(Math.abs(result.maxSaturation - 207.1638) < 0.001);
+  assert.equal(result.interfaces.find((point) => point.label === "Za vrstvou: PIR").relativeHumidity, 100);
+  assert.ok(Math.abs(result.interfaces.find((point) => point.label === "Za vrstvou: PIR").condensationRatio - 2.0716) < 0.001);
 });
 
 test("balances seasonal condensation and drying across the calendar boundary", () => {

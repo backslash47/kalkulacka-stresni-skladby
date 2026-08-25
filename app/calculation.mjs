@@ -60,6 +60,7 @@ export function calculateProfile(layers, conditions, surfaces = { inside: 0.1, o
       ? insidePressure - (insidePressure - outsidePressure) * (cumulativeDiffusion / totalDiffusion)
       : insidePressure;
     const saturation = saturationPressure(temperature);
+    const saturationRatio = saturation > 0 ? (pressure / saturation) * 100 : 0;
     return {
       positionMm,
       label,
@@ -68,7 +69,11 @@ export function calculateProfile(layers, conditions, surfaces = { inside: 0.1, o
       temperature,
       pressure,
       dewPoint: dewPoint(pressure),
-      saturationRatio: saturation > 0 ? (pressure / saturation) * 100 : 0,
+      saturationPressure: saturation,
+      saturationRatio,
+      relativeHumidity: Math.min(100, saturationRatio),
+      condensationRatio: saturationRatio / 100,
+      excessPressure: Math.max(0, pressure - saturation),
     };
   };
 
@@ -80,7 +85,6 @@ export function calculateProfile(layers, conditions, surfaces = { inside: 0.1, o
   let cumulativeThermal = insideSurface;
   let cumulativeDiffusion = 0;
   let positionMm = 0;
-  let firstRisk = null;
   let maxSaturation = Math.max(...points.map((point) => point.saturationRatio));
 
   for (const layer of layerData) {
@@ -97,15 +101,6 @@ export function calculateProfile(layers, conditions, surfaces = { inside: 0.1, o
       );
       points.push(point);
       maxSaturation = Math.max(maxSaturation, point.saturationRatio);
-      if (!firstRisk && point.saturationRatio >= 100) {
-        firstRisk = {
-          layerId: layer.id,
-          layerName: layer.name,
-          positionMm: point.positionMm,
-          temperature: point.temperature,
-          dewPoint: point.dewPoint,
-        };
-      }
     }
 
     cumulativeThermal += layer.thermal;
@@ -141,6 +136,43 @@ export function calculateProfile(layers, conditions, surfaces = { inside: 0.1, o
   interfaces.push(outsideSurfaceState, outsideAirState);
   points.push(outsideSurfaceState, outsideAirState);
 
+  const locatePoint = (point) => {
+    let startMm = 0;
+    for (let index = 0; index < layerData.length; index += 1) {
+      const layer = layerData[index];
+      const endMm = startMm + (Number(layer.thicknessMm) || 0);
+      if (Math.abs(point.positionMm - endMm) < 0.01 && index < layerData.length - 1) {
+        return `rozhraní ${layer.name} / ${layerData[index + 1].name}`;
+      }
+      if (point.positionMm >= startMm && point.positionMm < endMm) {
+        const depthMm = Math.max(0, point.positionMm - startMm);
+        return `uvnitř vrstvy ${layer.name} (${Math.round(depthMm)} mm od jejího vnitřního líce)`;
+      }
+      startMm = endMm;
+    }
+    return point.label.toLowerCase();
+  };
+
+  const riskyPoints = points.filter((point) => point.kind === "sample" && point.saturationRatio >= 100);
+  const firstRiskPoint = riskyPoints[0] ?? null;
+  const peakRiskPoint = riskyPoints.reduce(
+    (peak, point) => !peak || point.saturationRatio > peak.saturationRatio ? point : peak,
+    null,
+  );
+  const describeRisk = (point) => point ? {
+    layerId: point.layerId,
+    layerName: point.label,
+    locationLabel: locatePoint(point),
+    positionMm: point.positionMm,
+    temperature: point.temperature,
+    dewPoint: point.dewPoint,
+    saturationRatio: point.saturationRatio,
+    condensationRatio: point.condensationRatio,
+    excessPressure: point.excessPressure,
+  } : null;
+  const firstRisk = describeRisk(firstRiskPoint);
+  const peakRisk = describeRisk(peakRiskPoint);
+
   const heatFlux = totalThermal > 0 ? temperatureDifference / totalThermal : 0;
   const status = maxSaturation >= 100 ? "risk" : maxSaturation >= 95 ? "warning" : "safe";
 
@@ -152,6 +184,7 @@ export function calculateProfile(layers, conditions, surfaces = { inside: 0.1, o
     heatFlux,
     maxSaturation,
     firstRisk,
+    peakRisk,
     status,
     points,
     interfaces,
@@ -244,10 +277,11 @@ function monthlyBalanceAtPlane(layers, monthlyClimate, surfaces, planeIndex) {
       : "safe";
 
   const layer = activeLayers[planeIndex];
+  const nextLayer = activeLayers[planeIndex + 1];
   return {
     planeIndex,
     layerId: layer.id,
-    label: `Za vrstvou: ${layer.name}`,
+    label: `Rozhraní ${layer.name} / ${nextLayer.name}`,
     positionMm: potentials[0]?.point.positionMm ?? 0,
     diffusionInside,
     diffusionOutside,

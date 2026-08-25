@@ -392,6 +392,7 @@ export default function RoofCalculator() {
   );
   const activeResult = comparison.find(({ variant }) => variant.id === activeVariant?.id)?.result
     ?? calculateProfile([], conditions, surfaces);
+  const activePeakLayer = activeVariant?.layers.find((layer) => layer.id === activeResult.peakRisk?.layerId);
   const monthlyResult = useMemo(
     () => calculateMonthlyBalance(activeVariant?.layers ?? [], monthlyClimate, surfaces),
     [activeVariant, monthlyClimate, surfaces],
@@ -512,13 +513,14 @@ export default function RoofCalculator() {
 
   const exportCsv = () => {
     const rows = [
-      ["Místo", "Poloha [mm]", "Teplota [°C]", "Rosný bod [°C]", "Nasycení [%]"],
+      ["Místo", "Poloha [mm]", "Teplota [°C]", "Rosný bod [°C]", "Relativní vlhkost [%]", "Kondenzační poměr p/ps [–]"],
       ...activeResult.interfaces.map((point) => [
         point.label,
         format(point.positionMm, 1),
         format(point.temperature, 2),
         format(point.dewPoint, 2),
-        format(point.saturationRatio, 1),
+        format(point.relativeHumidity, 1),
+        point.condensationRatio > 1 ? format(point.condensationRatio, 2) : "",
       ]),
     ];
     download(
@@ -529,10 +531,15 @@ export default function RoofCalculator() {
   };
 
   const statusCopy = activeResult.status === "risk"
-    ? { label: "Riziko kondenzace", detail: activeResult.firstRisk ? `První kritická oblast: ${activeResult.firstRisk.layerName}` : "Křivky se protínají uvnitř skladby." }
+    ? {
+      label: "Kondenzační potenciál",
+      detail: activeResult.firstRisk
+        ? `Kritický úsek začíná ${activeResult.firstRisk.locationLabel}; maximum: ${activeResult.peakRisk?.locationLabel ?? activeResult.firstRisk.locationLabel}.`
+        : "Teplota klesá pod rosný bod uvnitř skladby.",
+    }
     : activeResult.status === "warning"
-      ? { label: "Blízko nasycení", detail: "Nejvyšší vypočtené nasycení je nad 95 %." }
-      : { label: "Bez průsečíku", detail: "Teplota zůstá nad rosným bodem ve všech vrstvách." };
+      ? { label: "Blízko kondenzaci", detail: "Teoretický poměr parciálního a nasyceného tlaku je nad 0,95×." }
+      : { label: "Bez průsečíku", detail: "Teplota zůstává nad rosným bodem ve všech vrstvách." };
 
   const monthlyStatusCopy = monthlyResult.status === "risk"
     ? { label: "Vlhkost mezi roky narůstá", detail: "Výpočtová rovina nemá v ročním cyklu dostatečnou kapacitu vyschnout." }
@@ -595,7 +602,7 @@ export default function RoofCalculator() {
               <span className={`status-dot ${result.status}`} aria-hidden="true" />
               <span className="variant-copy"><strong>{variant.name}</strong><small>{variant.description}</small></span>
               <span className="variant-stat"><b>{preciseFormat.format(result.uValue)}</b><small>W/(m²K)</small></span>
-              <span className="variant-stat"><b>{format(result.maxSaturation, 0)} %</b><small>max. nasycení</small></span>
+              <span className="variant-stat"><b>{format(Math.min(100, result.maxSaturation), 0)} %</b><small>{result.maxSaturation >= 100 ? `RH · potenciál ${format(result.maxSaturation / 100, 2)}×` : "max. relativní vlhkost"}</small></span>
             </button>
           ))}
         </div>
@@ -673,7 +680,7 @@ export default function RoofCalculator() {
         <article><span><HelpTerm label="Součinitel prostupu U" help="Množství tepla procházející 1 m² konstrukce při rozdílu teplot 1 K. Nižší hodnota znamená lepší tepelnou izolaci." align="left" /></span><strong>{preciseFormat.format(activeResult.uValue)}</strong><small>W/(m²K)</small></article>
         <article><span><HelpTerm label="Celkový tepelný odpor" help="Součet tepelných odporů aktivních vrstev a obou povrchových odporů. Vyšší hodnota znamená lepší tepelnou izolaci." align="left" /></span><strong>{format(activeResult.totalThermal, 2)}</strong><small>m²K/W</small></article>
         <article><span><HelpTerm label="Tepelný tok" help="Vypočtený tepelný výkon procházející 1 m² konstrukce při právě zadaném rozdílu vnitřní a venkovní teploty." align="left" /></span><strong>{format(Math.abs(activeResult.heatFlux), 2)}</strong><small>W/m²</small></article>
-        <article className={activeResult.status === "risk" ? "danger-metric" : "safe-metric"}><span><HelpTerm label="Maximum nasycení" help="Nejvyšší poměr parciálního tlaku vodní páry k tlaku nasycené páry ve skladbě. Hodnota 100 % znamená teoretický začátek kondenzace." align="right" /></span><strong>{format(activeResult.maxSaturation, 0)}</strong><small>%</small></article>
+        <article className={activeResult.status === "risk" ? "danger-metric" : "safe-metric"}><span><HelpTerm label="Max. relativní vlhkost" help="Relativní vlhkost je fyzikálně omezena na 100 %. Případné překročení původního lineárního tlakového profilu se zobrazuje zvlášť jako kondenzační potenciál." align="right" /></span><strong>{format(Math.min(100, activeResult.maxSaturation), 0)}</strong><small>% RH</small>{activeResult.maxSaturation >= 100 && <em>Kondenzační potenciál {format(activeResult.maxSaturation / 100, 2)}×</em>}</article>
       </section>
 
       <section className="results-grid">
@@ -685,8 +692,9 @@ export default function RoofCalculator() {
           <span className="summary-label">Interpretace</span>
           <h2>{statusCopy.label}</h2>
           <p>{statusCopy.detail}</p>
-          {activeResult.firstRisk && <dl><div><dt>Poloha od interiéru</dt><dd>{format(activeResult.firstRisk.positionMm, 0)} mm</dd></div><div><dt>Teplota</dt><dd>{format(activeResult.firstRisk.temperature, 1)} °C</dd></div><div><dt>Rosný bod</dt><dd>{format(activeResult.firstRisk.dewPoint, 1)} °C</dd></div></dl>}
-          <p className="fine-print">Nasycení nad 100 % označuje teoretický přebytek vodní páry. Ve skutečnosti se tlak omezí kondenzací.</p>
+          {activeResult.firstRisk && <dl><div><dt>Začátek kritického úseku</dt><dd>{activeResult.firstRisk.locationLabel}</dd></div><div><dt>Poloha od interiéru</dt><dd>{format(activeResult.firstRisk.positionMm, 0)} mm</dd></div><div><dt>Maximum potenciálu</dt><dd>{activeResult.peakRisk?.locationLabel ?? activeResult.firstRisk.locationLabel}</dd></div><div><dt>Poměr p / p<sub>sat</sub></dt><dd>{format((activeResult.peakRisk?.condensationRatio ?? activeResult.firstRisk.condensationRatio), 2)}×</dd></div></dl>}
+          {activePeakLayer?.note && <p className="material-model-note"><strong>Poznámka k modelu:</strong> {activePeakLayer.note}</p>}
+          <p className="fine-print">Relativní vlhkost se nezobrazuje nad 100 %. Kondenzační potenciál nad 1,00× je teoretické překročení tlaku nasycené páry v suchém lineárním profilu, nikoli skutečná relativní vlhkost. Množství a vysychání hodnotí měsíční bilance níže.</p>
         </aside>
       </section>
 
@@ -697,17 +705,17 @@ export default function RoofCalculator() {
         </div>
         <div className="layer-table-wrap">
           <table className="result-table">
-            <thead><tr><th>Místo</th><th><HelpTerm label="Poloha" help="Vzdálenost daného rozhraní od vnitřního povrchu skladby." /></th><th>Teplota</th><th><HelpTerm label="Rosný bod" help="Teplota, při které by vodní pára při vypočteném parciálním tlaku dosáhla nasycení." /></th><th><HelpTerm label="Nasycení" help="Poměr vypočteného parciálního tlaku vodní páry k tlaku nasycené páry. Nad 100 % výpočet předpokládá kondenzaci." /></th><th>Hodnocení</th></tr></thead>
+            <thead><tr><th>Místo</th><th><HelpTerm label="Poloha" help="Vzdálenost daného rozhraní od vnitřního povrchu skladby." /></th><th>Teplota</th><th><HelpTerm label="Rosný bod" help="Teplota, při které by vodní pára při vypočteném parciálním tlaku dosáhla nasycení." /></th><th><HelpTerm label="Rel. vlhkost" help="Fyzikálně omezená relativní vlhkost. Při kondenzaci se zobrazuje nejvýše 100 %." /></th><th><HelpTerm label="Kondenzační poměr" help="Teoretický poměr parciálního tlaku p k tlaku nasycené páry psat před omezením kondenzací. Hodnota nad 1,00× označuje kondenzační potenciál, nikoli skutečnou relativní vlhkost." /></th><th>Hodnocení</th></tr></thead>
             <tbody>{activeResult.interfaces.map((point, index) => (
               <tr key={`${point.label}-${index}`}>
-                <td>{point.label}</td><td>{format(point.positionMm, 1)} mm</td><td>{format(point.temperature, 2)} °C</td><td>{format(point.dewPoint, 2)} °C</td><td>{format(point.saturationRatio, 1)} %</td>
+                <td>{point.label}</td><td>{format(point.positionMm, 1)} mm</td><td>{format(point.temperature, 2)} °C</td><td>{format(point.dewPoint, 2)} °C</td><td>{format(point.relativeHumidity, 1)} %</td><td>{point.condensationRatio > 1 ? `${format(point.condensationRatio, 2)}×` : "—"}</td>
                 <td><span className={`result-badge ${point.saturationRatio >= 100 ? "risk" : point.saturationRatio >= 95 ? "warning" : "safe"}`}>{point.saturationRatio >= 100 ? "Kondenzace" : point.saturationRatio >= 95 ? "Na hraně" : "Bez průsečíku"}</span></td>
               </tr>
             ))}</tbody>
           </table>
         </div>
         <div className="term-legend" aria-label="Vysvětlivky k výsledkům na rozhraních">
-          <strong>Čtení tabulky:</strong><span>Poloha se měří od interiéru.</span><span>Ke kondenzaci dochází, když teplota klesne pod rosný bod a nasycení dosáhne 100 %.</span>
+          <strong>Čtení tabulky:</strong><span>Poloha se měří od interiéru.</span><span>Relativní vlhkost končí na 100 %; další teoretický přebytek vyjadřuje kondenzační poměr nad 1,00×.</span>
         </div>
       </section>
 

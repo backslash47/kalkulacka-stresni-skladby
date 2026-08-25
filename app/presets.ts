@@ -51,7 +51,7 @@ function layer(id: string, name: string, thicknessMm: number, lambda: number, mu
 const exteriorLayers = (prefix: string): Layer[] => [
   layer(`${prefix}-osb`, "OSB/3 Kronospan", 25, 0.1, 100, colors.osb, { note: "μ pro vlhký stav" }),
   layer(`${prefix}-glastek`, "GLASTEK 40 STICKER PLUS", 4, 0.17, 27000, colors.asphalt, { fixedSd: 108 }),
-  layer(`${prefix}-pir`, "Kingspan Therma TR26", 160, 0.022, 260, colors.pir, { fixedR: 7.25, fixedSd: 41.6, note: "R a sd včetně kompozitních fólií" }),
+  layer(`${prefix}-pir`, "Kingspan Therma TR26", 160, 0.022, 260, colors.pir, { fixedR: 7.25, fixedSd: 41.6, note: "Kompozitní deska: R a celkové sd zahrnují obě fólie. Přesná poloha prvního překročení uvnitř desky je proto orientační; rozhraní vrstev je podstatnější." }),
   layer(`${prefix}-pvc`, "Sikaplan G-18", 1.8, 0.16, 20000, colors.membrane, { fixedSd: 36 }),
 ];
 
