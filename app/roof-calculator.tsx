@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { calculateMonthlyBalance, calculateProfile, layerResistance } from "./calculation.mjs";
 import {
   defaultConditions,
@@ -259,6 +259,12 @@ function MonthlyBalanceChart({ result }: { result: ReturnType<typeof calculateMo
       context.textAlign = "left";
       context.fillText(`${format(storedMaximum, 0)} g/m²`, width - margin.right + 9, storedY(storedMaximum));
       context.fillText("0", width - margin.right + 9, storedY(0));
+      context.textBaseline = "top";
+      context.fillStyle = "#173b3a";
+      context.textAlign = "left";
+      context.fillText("Měsíční bilance [g/m²]", margin.left, 10);
+      context.textAlign = "right";
+      context.fillText("Nahromaděno [g/m²]", width - margin.right, 10);
     };
 
     draw();
@@ -275,6 +281,32 @@ function MonthlyBalanceChart({ result }: { result: ReturnType<typeof calculateMo
         aria-label="Graf měsíční kondenzace, odpařování a nahromaděné vlhkosti"
       />
     </div>
+  );
+}
+
+function HelpTerm({
+  label,
+  help,
+  align = "center",
+}: {
+  label: string;
+  help: string;
+  align?: "left" | "center" | "right";
+}) {
+  const tooltipId = useId();
+
+  return (
+    <button
+      type="button"
+      className={`help-term help-${align}`}
+      title={help}
+      aria-describedby={tooltipId}
+      aria-label={`${label}: ${help}`}
+    >
+      <span>{label}</span>
+      <span className="help-symbol" aria-hidden="true">?</span>
+      <span className="help-tooltip" id={tooltipId} role="tooltip">{help}</span>
+    </button>
   );
 }
 
@@ -545,8 +577,8 @@ export default function RoofCalculator() {
         <details className="advanced-settings">
           <summary>Povrchové odpory a metodika</summary>
           <div className="advanced-grid">
-            <label>Vnitřní odpor R<sub>si</sub><input type="number" step="0.01" min="0" value={surfaces.inside} onChange={(event) => setSurfaces((current) => ({ ...current, inside: Number(event.target.value) }))} /></label>
-            <label>Vnější odpor R<sub>se</sub><input type="number" step="0.01" min="0" value={surfaces.outside} onChange={(event) => setSurfaces((current) => ({ ...current, outside: Number(event.target.value) }))} /></label>
+            <div className="advanced-field"><HelpTerm label="Vnitřní odpor Rsi" help="Odpor při přestupu tepla mezi vnitřním vzduchem a vnitřním povrchem konstrukce, v m²K/W." align="left" /><input aria-label="Vnitřní povrchový odpor Rsi" type="number" step="0.01" min="0" value={surfaces.inside} onChange={(event) => setSurfaces((current) => ({ ...current, inside: Number(event.target.value) }))} /></div>
+            <div className="advanced-field"><HelpTerm label="Vnější odpor Rse" help="Odpor při přestupu tepla mezi vnějším povrchem konstrukce a venkovním vzduchem, v m²K/W." align="left" /><input aria-label="Vnější povrchový odpor Rse" type="number" step="0.01" min="0" value={surfaces.outside} onChange={(event) => setSurfaces((current) => ({ ...current, outside: Number(event.target.value) }))} /></div>
             <p>Výchozí hodnoty 0,10 a 0,04 m²K/W odpovídají toku tepla vzhůru přes střechu. Podhled propojený svítidly s interiérem není ve výchozí skladbě započítán.</p>
           </div>
         </details>
@@ -588,7 +620,17 @@ export default function RoofCalculator() {
         <div className="layer-table-wrap">
           <table className="layer-table editable-table">
             <thead>
-              <tr><th>Zap.</th><th>Materiál</th><th>d [mm]</th><th>λ [W/mK]</th><th>μ [–]</th><th>Vlastní R</th><th>Vlastní sd [m]</th><th>Výsledné R / sd</th><th>Akce</th></tr>
+              <tr>
+                <th><HelpTerm label="Zap." help="Určuje, zda je vrstva zahrnuta do výpočtu." align="left" /></th>
+                <th>Materiál</th>
+                <th><HelpTerm label="d [mm]" help="Tloušťka vrstvy v milimetrech." /></th>
+                <th><HelpTerm label="λ [W/(m·K)]" help="Součinitel tepelné vodivosti. Nižší λ znamená při stejné tloušťce lepší tepelnou izolaci." /></th>
+                <th><HelpTerm label="μ [–]" help="Faktor difuzního odporu vůči vodní páře. Vyšší μ znamená menší propustnost pro vodní páru." /></th>
+                <th><HelpTerm label="Vlastní R" help="Ručně zadaný tepelný odpor vrstvy v m²K/W. Pokud pole zůstane prázdné, vypočte se z d a λ." /></th>
+                <th><HelpTerm label="Vlastní sd [m]" help="Ručně zadaná ekvivalentní difuzní tloušťka. Pokud pole zůstane prázdné, vypočte se jako tloušťka × μ." /></th>
+                <th><HelpTerm label="Výsledné R / sd" help="Tepelný odpor R v m²K/W a ekvivalentní difuzní tloušťka sd v metrech, které výpočet skutečně používá." /></th>
+                <th>Akce</th>
+              </tr>
             </thead>
             <tbody>
               {activeVariant.layers.map((layer, index) => {
@@ -615,6 +657,9 @@ export default function RoofCalculator() {
             </tbody>
           </table>
         </div>
+        <div className="term-legend" aria-label="Vysvětlivky k vlastnostem vrstev">
+          <strong>Vysvětlivky:</strong><span><b>d</b> tloušťka</span><span><b>λ</b> tepelná vodivost</span><span><b>μ</b> difuzní faktor</span><span><b>R</b> tepelný odpor</span><span><b>sd</b> difuzní odpor vyjádřený ekvivalentní tloušťkou vzduchu</span>
+        </div>
         <div className="add-layer-bar">
           <select aria-label="Materiál k přidání" value={materialIndex} onChange={(event) => setMaterialIndex(Number(event.target.value))}>
             {materialLibrary.map((material, index) => <option value={index} key={`${material.name}-${index}`}>{material.name}</option>)}
@@ -625,10 +670,10 @@ export default function RoofCalculator() {
       </section>
 
       <section className="metric-row" aria-label="Souhrn výsledků">
-        <article><span>Součinitel prostupu U</span><strong>{preciseFormat.format(activeResult.uValue)}</strong><small>W/(m²K)</small></article>
-        <article><span>Celkový tepelný odpor</span><strong>{format(activeResult.totalThermal, 2)}</strong><small>m²K/W</small></article>
-        <article><span>Tepelný tok</span><strong>{format(Math.abs(activeResult.heatFlux), 2)}</strong><small>W/m²</small></article>
-        <article className={activeResult.status === "risk" ? "danger-metric" : "safe-metric"}><span>Maximum nasycení</span><strong>{format(activeResult.maxSaturation, 0)}</strong><small>%</small></article>
+        <article><span><HelpTerm label="Součinitel prostupu U" help="Množství tepla procházející 1 m² konstrukce při rozdílu teplot 1 K. Nižší hodnota znamená lepší tepelnou izolaci." align="left" /></span><strong>{preciseFormat.format(activeResult.uValue)}</strong><small>W/(m²K)</small></article>
+        <article><span><HelpTerm label="Celkový tepelný odpor" help="Součet tepelných odporů aktivních vrstev a obou povrchových odporů. Vyšší hodnota znamená lepší tepelnou izolaci." align="left" /></span><strong>{format(activeResult.totalThermal, 2)}</strong><small>m²K/W</small></article>
+        <article><span><HelpTerm label="Tepelný tok" help="Vypočtený tepelný výkon procházející 1 m² konstrukce při právě zadaném rozdílu vnitřní a venkovní teploty." align="left" /></span><strong>{format(Math.abs(activeResult.heatFlux), 2)}</strong><small>W/m²</small></article>
+        <article className={activeResult.status === "risk" ? "danger-metric" : "safe-metric"}><span><HelpTerm label="Maximum nasycení" help="Nejvyšší poměr parciálního tlaku vodní páry k tlaku nasycené páry ve skladbě. Hodnota 100 % znamená teoretický začátek kondenzace." align="right" /></span><strong>{format(activeResult.maxSaturation, 0)}</strong><small>%</small></article>
       </section>
 
       <section className="results-grid">
@@ -652,7 +697,7 @@ export default function RoofCalculator() {
         </div>
         <div className="layer-table-wrap">
           <table className="result-table">
-            <thead><tr><th>Místo</th><th>Poloha</th><th>Teplota</th><th>Rosný bod</th><th>Nasycení</th><th>Hodnocení</th></tr></thead>
+            <thead><tr><th>Místo</th><th><HelpTerm label="Poloha" help="Vzdálenost daného rozhraní od vnitřního povrchu skladby." /></th><th>Teplota</th><th><HelpTerm label="Rosný bod" help="Teplota, při které by vodní pára při vypočteném parciálním tlaku dosáhla nasycení." /></th><th><HelpTerm label="Nasycení" help="Poměr vypočteného parciálního tlaku vodní páry k tlaku nasycené páry. Nad 100 % výpočet předpokládá kondenzaci." /></th><th>Hodnocení</th></tr></thead>
             <tbody>{activeResult.interfaces.map((point, index) => (
               <tr key={`${point.label}-${index}`}>
                 <td>{point.label}</td><td>{format(point.positionMm, 1)} mm</td><td>{format(point.temperature, 2)} °C</td><td>{format(point.dewPoint, 2)} °C</td><td>{format(point.saturationRatio, 1)} %</td>
@@ -660,6 +705,9 @@ export default function RoofCalculator() {
               </tr>
             ))}</tbody>
           </table>
+        </div>
+        <div className="term-legend" aria-label="Vysvětlivky k výsledkům na rozhraních">
+          <strong>Čtení tabulky:</strong><span>Poloha se měří od interiéru.</span><span>Ke kondenzaci dochází, když teplota klesne pod rosný bod a nasycení dosáhne 100 %.</span>
         </div>
       </section>
 
@@ -684,10 +732,10 @@ export default function RoofCalculator() {
             </div>
 
             <div className="monthly-metrics">
-              <article><span>Vznik kondenzátu</span><strong>{format(monthlyResult.annualCondensationGm2, 1)}</strong><small>g/m² za cyklus</small></article>
-              <article><span>Odpaření</span><strong>{format(monthlyResult.annualEvaporationGm2, 1)}</strong><small>g/m² za cyklus</small></article>
-              <article><span>Maximum ve skladbě</span><strong>{format(monthlyResult.peakStoredGm2, 1)}</strong><small>g/m²</small></article>
-              <article className={monthlyResult.status === "risk" ? "danger-metric" : "safe-metric"}><span>Roční přírůstek</span><strong>{format(Math.max(0, monthlyResult.annualPotentialGm2), 1)}</strong><small>g/m² za rok</small></article>
+              <article><span><HelpTerm label="Vznik kondenzátu" help="Součet nově vzniklého kondenzátu za měsíce, ve kterých má bilance kladnou hodnotu, na rozhodujícím rozhraní." align="left" /></span><strong>{format(monthlyResult.annualCondensationGm2, 1)}</strong><small>g/m² za cyklus</small></article>
+              <article><span><HelpTerm label="Odpaření" help="Část dříve nahromaděného kondenzátu, kterou mohou příznivé měsíce skutečně odpařit." align="left" /></span><strong>{format(monthlyResult.annualEvaporationGm2, 1)}</strong><small>g/m² za cyklus</small></article>
+              <article><span><HelpTerm label="Maximum ve skladbě" help="Nejvyšší množství kondenzátu současně nahromaděné na rozhodujícím rozhraní během ročního cyklu." align="left" /></span><strong>{format(monthlyResult.peakStoredGm2, 1)}</strong><small>g/m²</small></article>
+              <article className={monthlyResult.status === "risk" ? "danger-metric" : "safe-metric"}><span><HelpTerm label="Roční přírůstek" help="Množství vlhkosti, které po započtení vysychání přibude za jeden celý rok. Kladná hodnota znamená hromadění mezi roky." align="right" /></span><strong>{format(Math.max(0, monthlyResult.annualPotentialGm2), 1)}</strong><small>g/m² za rok</small></article>
             </div>
 
             <div className="monthly-chart-panel">
@@ -700,7 +748,7 @@ export default function RoofCalculator() {
 
             <div className="layer-table-wrap">
               <table className="result-table monthly-table">
-                <thead><tr><th>Měsíc</th><th>Ti [°C]</th><th>RHi [%]</th><th>Te [°C]</th><th>RHe [%]</th><th>Kondenzace</th><th>Odpaření</th><th>Nahromaděno</th></tr></thead>
+                <thead><tr><th>Měsíc</th><th><HelpTerm label="Ti [°C]" help="Průměrná vnitřní teplota v daném měsíci." /></th><th><HelpTerm label="RHi [%]" help="Průměrná relativní vlhkost vnitřního vzduchu v daném měsíci." /></th><th><HelpTerm label="Te [°C]" help="Průměrná venkovní teplota v daném měsíci." /></th><th><HelpTerm label="RHe [%]" help="Průměrná relativní vlhkost venkovního vzduchu v daném měsíci." /></th><th><HelpTerm label="Kondenzace" help="Množství nově vzniklého kondenzátu v daném měsíci na rozhodujícím rozhraní." /></th><th><HelpTerm label="Odpaření" help="Množství dříve nahromaděného kondenzátu, které se v daném měsíci odpaří." /></th><th><HelpTerm label="Nahromaděno" help="Množství kondenzátu, které na rozhodujícím rozhraní zůstává na konci daného měsíce." align="right" /></th></tr></thead>
                 <tbody>{monthlyResult.months.map((month) => (
                   <tr key={month.id} className={month.storedGm2 > 0.001 ? "wet-month" : ""}>
                     <td>{month.month}</td>
@@ -714,6 +762,9 @@ export default function RoofCalculator() {
                   </tr>
                 ))}</tbody>
               </table>
+            </div>
+            <div className="term-legend" aria-label="Vysvětlivky k měsíčním klimatickým údajům">
+              <strong>Klimatické zkratky:</strong><span><b>Ti</b> vnitřní teplota</span><span><b>RHi</b> vnitřní relativní vlhkost</span><span><b>Te</b> venkovní teplota</span><span><b>RHe</b> venkovní relativní vlhkost</span>
             </div>
           </>
         ) : (
