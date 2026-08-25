@@ -36,8 +36,6 @@ jobs:
 
       - name: Připravit GitHub Pages
         uses: actions/configure-pages@v6
-        with:
-          enablement: true
 
       - name: Nahrát statickou aplikaci
         uses: actions/upload-pages-artifact@v5
