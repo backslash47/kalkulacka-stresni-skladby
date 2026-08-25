@@ -16,18 +16,23 @@ a teoretického rizika kondenzace ve střešní konstrukci.
   tepelného odporu R a ekvivalentní difuzní tloušťky sd,
 - graf teploty a rosného bodu,
 - tabulka výsledků na rozhraních vrstev,
-- export konfigurace do JSON a výsledků do CSV,
+- zjednodušená měsíční bilance kondenzace a vysychání s upravitelným klimatem,
+- graf a tabulka nahromaděné vlhkosti v průběhu roku,
+- export konfigurace do JSON a obou výpočtů do CSV,
 - automatické uložení rozpracovaného zadání v prohlížeči.
 
 ## Metodika a omezení
 
-Výpočet je stacionární a jednorozměrný. Používá rozdělení teplot podle
-tepelných odporů a rozdělení parciálního tlaku vodní páry podle hodnot sd.
-Slouží pro porovnání variant a vyhledání rizikových míst.
+Základní výpočet je stacionární a jednorozměrný. Používá rozdělení teplot
+podle tepelných odporů a rozdělení parciálního tlaku vodní páry podle hodnot
+sd. Měsíční část navíc vyčísluje difuzní kondenzaci a dostupné odpařování na
+jednotlivých rozhraních a zobrazí nejnepříznivější z nich. Výchozí venkovní
+data jsou měsíční klimatologie NASA POWER 2001–2020 pro Brno.
 
-Nenahrazuje měsíční nebo dynamické posouzení podle příslušných norem. Neřeší
-roční vysychání, déšť, sluneční záření, zabudovanou vlhkost, proudění vzduchu
-netěsnostmi ani přesný dvourozměrný vliv křížení trámů.
+Jde o zjednodušený měsíční Glaserův screening, nikoli dynamickou hygrotermickou
+simulaci. Neřeší déšť, sluneční a dlouhovlnné záření, zabudovanou vlhkost,
+kapilární transport, proudění vzduchu netěsnostmi ani přesný dvourozměrný vliv
+křížení trámů.
 
 ## Lokální spuštění
 

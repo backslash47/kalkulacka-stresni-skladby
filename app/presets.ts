@@ -25,6 +25,12 @@ export type Variant = {
   layers: Layer[];
 };
 
+export type MonthlyClimate = Conditions & {
+  id: string;
+  month: string;
+  days: number;
+};
+
 const colors = {
   plaster: "#d8c8a9",
   wood: "#b77b46",
@@ -105,6 +111,37 @@ export const defaultConditions: Conditions = {
   outsideTemperature: -15,
   outsideHumidity: 84,
 };
+
+const brnoClimate = [
+  ["jan", "Leden", 31, -2.56, 91.77],
+  ["feb", "Únor", 28, -0.59, 87.74],
+  ["mar", "Březen", 31, 3.9, 80.33],
+  ["apr", "Duben", 30, 9.79, 73.43],
+  ["may", "Květen", 31, 14.74, 70.78],
+  ["jun", "Červen", 30, 19.19, 66.13],
+  ["jul", "Červenec", 31, 21.45, 61.88],
+  ["aug", "Srpen", 31, 20.94, 62.41],
+  ["sep", "Září", 30, 15.38, 69.64],
+  ["oct", "Říjen", 31, 9.35, 80.91],
+  ["nov", "Listopad", 30, 4.25, 88.98],
+  ["dec", "Prosinec", 31, -1.12, 92.33],
+] as const;
+
+export const defaultMonthlyClimate: MonthlyClimate[] = brnoClimate.map(([
+  id,
+  month,
+  days,
+  outsideTemperature,
+  outsideHumidity,
+]) => ({
+  id,
+  month,
+  days,
+  insideTemperature: 21,
+  insideHumidity: 50,
+  outsideTemperature,
+  outsideHumidity,
+}));
 
 export const defaultVariants: Variant[] = [
   {

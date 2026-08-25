@@ -49,7 +49,7 @@ main { min-height: 100vh; padding-bottom: 2rem; }
 .text-button:hover, .outline-button:hover, .primary-button:hover { transform: translateY(-1px); }
 .outline-button:hover { border-color: var(--ink); }
 
-.hero, .conditions-panel, .comparison-section, .workspace-panel, .metric-row, .results-grid, .interfaces-panel, .method-panel, footer {
+.hero, .conditions-panel, .comparison-section, .workspace-panel, .metric-row, .results-grid, .interfaces-panel, .monthly-panel, .method-panel, footer {
   width: min(1220px, calc(100% - 2.5rem)); margin-inline: auto;
 }
 .hero { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 3rem; align-items: end; padding: 4.7rem 0 3.2rem; }
@@ -67,10 +67,10 @@ h1 { max-width: 780px; margin: 0; font-family: Georgia, "Times New Roman", serif
 .safe .summary-label { color: var(--safe); }
 .warning .summary-label { color: var(--warning); }
 
-.conditions-panel, .workspace-panel, .interfaces-panel, .result-panel, .finding-panel, .method-panel {
+.conditions-panel, .workspace-panel, .interfaces-panel, .monthly-panel, .result-panel, .finding-panel, .method-panel {
   background: rgba(255, 253, 250, .93); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow);
 }
-.conditions-panel, .workspace-panel, .interfaces-panel { overflow: hidden; }
+.conditions-panel, .workspace-panel, .interfaces-panel, .monthly-panel { overflow: hidden; }
 .section-heading, .workspace-toolbar, .result-heading { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); }
 .section-heading > div, .workspace-toolbar > div:first-child, .result-heading > div:first-child { display: flex; align-items: center; gap: .9rem; }
 .section-heading h2, .workspace-toolbar h2, .result-heading h2 { margin: 0; font-size: 1.02rem; letter-spacing: -.01em; }
@@ -171,6 +171,49 @@ select { border: 1px solid var(--line); border-radius: 9px; padding: .58rem 2rem
 .result-badge.warning { background: var(--warning-soft); color: var(--warning); }
 .result-badge.risk { background: var(--risk-soft); color: var(--risk); }
 
+.monthly-panel { margin-top: 1.25rem; background: var(--panel); }
+.monthly-heading { min-height: 88px; }
+.monthly-heading h2 { margin: 0; }
+.monthly-heading p { margin: .25rem 0 0; color: var(--ink-soft); font-size: .72rem; }
+.monthly-actions { display: flex; align-items: center; gap: .45rem; }
+.monthly-actions button:disabled { opacity: .42; cursor: not-allowed; transform: none; }
+.monthly-callout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, .7fr); gap: 2rem; align-items: center; padding: 1.4rem 1.5rem; border-bottom: 1px solid var(--line); background: var(--panel-muted); }
+.monthly-callout.risk { box-shadow: inset 4px 0 0 var(--risk); }
+.monthly-callout.warning { box-shadow: inset 4px 0 0 var(--warning); }
+.monthly-callout.safe { box-shadow: inset 4px 0 0 var(--safe); }
+.monthly-callout strong { display: block; margin-top: .45rem; font-family: Georgia, serif; font-size: 1.55rem; font-weight: 600; }
+.monthly-callout p { margin: .35rem 0 0; color: var(--ink-soft); font-size: .78rem; line-height: 1.5; }
+.monthly-callout dl { margin: 0; }
+.monthly-callout dl > div { display: flex; justify-content: space-between; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--line); }
+.monthly-callout dt { color: var(--ink-soft); font-size: .68rem; }
+.monthly-callout dd { max-width: 64%; margin: 0; text-align: right; font-size: .75rem; font-weight: 750; }
+.monthly-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+.monthly-metrics article { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: .3rem; padding: 1rem 1.2rem; background: var(--panel); }
+.monthly-metrics span { grid-column: 1 / -1; color: var(--ink-soft); font-size: .68rem; font-weight: 740; }
+.monthly-metrics strong { font-family: Georgia, serif; font-size: 1.65rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.monthly-metrics small { padding-bottom: .25rem; color: var(--ink-soft); font-size: .63rem; }
+.monthly-metrics .danger-metric strong { color: var(--risk); }
+.monthly-metrics .safe-metric strong { color: var(--safe); }
+.monthly-chart-panel { border-bottom: 1px solid var(--line); }
+.monthly-chart-copy { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.15rem 1.35rem 0; }
+.monthly-chart-copy h3 { margin: 0; font-family: Georgia, serif; font-size: 1.2rem; font-weight: 600; }
+.monthly-chart-copy p { max-width: 670px; margin: .3rem 0 0; color: var(--ink-soft); font-size: .72rem; line-height: 1.5; }
+.monthly-chart-copy .legend { padding-top: .25rem; white-space: nowrap; }
+.monthly-chart-copy .legend .condensation-bar::before { height: 9px; background: rgba(166, 67, 54, .76); }
+.monthly-chart-copy .legend .evaporation-bar::before { height: 9px; background: rgba(45, 120, 98, .7); }
+.monthly-chart-copy .legend .stored-line::before { background: var(--ink); }
+.monthly-chart { min-height: 340px; }
+.monthly-table { min-width: 1040px; }
+.monthly-table td { white-space: nowrap; }
+.monthly-table .climate-input { width: 76px; border: 1px solid var(--line); border-radius: 7px; padding: .45rem .5rem; color: var(--ink); background: white; font-variant-numeric: tabular-nums; }
+.monthly-table .wet-month { background: rgba(166, 67, 54, .035); }
+.monthly-table .condensation-value { color: var(--risk); }
+.monthly-table .evaporation-value { color: var(--safe); }
+.monthly-empty { margin: 0; padding: 2rem 1.5rem; color: var(--ink-soft); }
+.monthly-note { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; padding: 1.1rem 1.35rem; border-top: 1px solid var(--line); background: var(--panel-muted); }
+.monthly-note p { margin: 0; color: var(--ink-soft); font-size: .7rem; line-height: 1.55; }
+.monthly-note strong { color: var(--ink); }
+
 .method-panel { margin-top: 1.25rem; padding: 1.35rem; background: var(--ink); color: white; border-color: var(--ink); }
 .method-panel h2 { margin: 0 0 1rem; font-family: Georgia, serif; font-size: 1.45rem; font-weight: 500; }
 .method-columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.6rem; }
@@ -190,7 +233,10 @@ footer span:first-child { color: var(--ink); font-weight: 800; }
   .hero { grid-template-columns: 1fr; gap: 1.7rem; padding-top: 3rem; }
   .condition-grid, .metric-row { grid-template-columns: repeat(2, 1fr); }
   .comparison-grid { grid-template-columns: 1fr; }
-  .advanced-grid, .method-columns { grid-template-columns: 1fr; }
+  .advanced-grid, .method-columns, .monthly-callout, .monthly-note { grid-template-columns: 1fr; }
+  .monthly-metrics { grid-template-columns: repeat(2, 1fr); }
+  .monthly-heading { align-items: flex-start; flex-direction: column; }
+  .monthly-actions { width: 100%; flex-wrap: wrap; }
   .muted { display: none; }
   .add-layer-bar { align-items: stretch; flex-wrap: wrap; }
   .add-layer-bar p { width: 100%; margin-left: 0; }
@@ -198,7 +244,7 @@ footer span:first-child { color: var(--ink); font-weight: 800; }
 @media (max-width: 560px) {
   .topbar { padding-inline: .7rem; }
   .top-actions .text-button { display: none; }
-  .hero, .conditions-panel, .comparison-section, .workspace-panel, .metric-row, .results-grid, .interfaces-panel, .method-panel, footer { width: min(100% - 1.1rem, 1220px); }
+  .hero, .conditions-panel, .comparison-section, .workspace-panel, .metric-row, .results-grid, .interfaces-panel, .monthly-panel, .method-panel, footer { width: min(100% - 1.1rem, 1220px); }
   .hero { padding: 2.5rem 0 2rem; }
   h1 { font-size: 2.55rem; }
   .condition-grid, .metric-row { grid-template-columns: 1fr; }
@@ -206,6 +252,8 @@ footer span:first-child { color: var(--ink); font-weight: 800; }
   .workspace-toolbar { flex-direction: column; }
   .toolbar-controls, .toolbar-controls label, .toolbar-controls select { width: 100%; }
   .legend { display: none; }
+  .monthly-metrics { grid-template-columns: 1fr; }
+  .monthly-chart-copy { display: block; }
   .variant-card { gap: .7rem; }
   .variant-stat { padding-left: .7rem; }
   footer { flex-direction: column; }
