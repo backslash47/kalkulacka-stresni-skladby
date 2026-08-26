@@ -59,7 +59,9 @@ const exteriorLayers = (prefix: string): Layer[] => [
     initialMoisturePercent: 10,
   }),
   layer(`${prefix}-glastek`, "GLASTEK 40 STICKER PLUS", 4, 0.17, 27000, colors.asphalt, { fixedSd: 108 }),
-  layer(`${prefix}-pir`, "Kingspan Therma TR26", 160, 0.022, 260, colors.pir, { fixedR: 7.25, fixedSd: 41.6, note: "Kompozitní deska: R a celkové sd zahrnují obě fólie. Přesná poloha prvního překročení uvnitř desky je proto orientační; rozhraní vrstev je podstatnější." }),
+  layer(`${prefix}-pir`, "PIR deska", 160, 0.022, 260, colors.pir, {
+    note: "R se automaticky počítá jako d / λ a sd jako d × μ. Efektivní μ je orientační vstup a lze jej upravit podle konkrétního výrobku; poloha uvnitř kompozitní desky je pouze orientační.",
+  }),
   layer(`${prefix}-pvc`, "Sikaplan G-18", 1.8, 0.16, 20000, colors.membrane, { fixedSd: 36 }),
 ];
 
@@ -190,7 +192,7 @@ export const materialLibrary: Omit<Layer, "id">[] = [
   layer("", "Uzavřená vzduchová vrstva", 20, 0.15, 1, colors.air, { fixedR: 0.16, fixedSd: 0.02 }),
   layer("", "OSB/3", 25, 0.1, 100, colors.osb, { woodKind: "osb", densityKgM3: 600, initialMoisturePercent: 10 }),
   layer("", "Asfaltový pás", 4, 0.17, 27000, colors.asphalt),
-  layer("", "PIR deska", 160, 0.022, 60, colors.pir),
+  layer("", "PIR deska", 160, 0.022, 260, colors.pir, { note: "R a sd se automaticky přepočítávají z tloušťky; efektivní μ upravte podle konkrétního výrobku." }),
   layer("", "PVC-P střešní fólie", 1.8, 0.16, 20000, colors.membrane),
   layer("", "PE parozábrana", 0.2, 0.33, 500000, colors.vapour, { fixedSd: 100 }),
   layer("", "Vlastní materiál", 100, 0.1, 10, "#9aa7a3"),

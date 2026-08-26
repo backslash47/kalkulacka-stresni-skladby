@@ -42,6 +42,22 @@ function cloneDefaultMonthlyClimate() {
   return defaultMonthlyClimate.map((month) => ({ ...month }));
 }
 
+function migrateSavedVariants(savedVariants: Variant[]) {
+  return savedVariants.map((variant) => ({
+    ...variant,
+    layers: variant.layers.map((layer) => {
+      if (layer.name !== "Kingspan Therma TR26") return layer;
+      return {
+        ...layer,
+        name: "PIR deska",
+        fixedR: null,
+        fixedSd: null,
+        note: "R se automaticky počítá jako d / λ a sd jako d × μ. Efektivní μ je orientační vstup a lze jej upravit podle konkrétního výrobku; poloha uvnitř kompozitní desky je pouze orientační.",
+      };
+    }),
+  }));
+}
+
 function inferredWoodKind(layer: Layer): "none" | "solid" | "osb" {
   if (layer.woodKind) return layer.woodKind;
   const name = layer.name.toLocaleLowerCase("cs");
@@ -385,7 +401,7 @@ export default function RoofCalculator() {
           if (parsed.conditions && parsed.surfaces && Array.isArray(parsed.variants)) {
             setConditions(parsed.conditions);
             setSurfaces(parsed.surfaces);
-            setVariants(parsed.variants);
+            setVariants(migrateSavedVariants(parsed.variants));
             setActiveId(parsed.activeId || parsed.variants[0]?.id || "with-wool");
             if (Array.isArray(parsed.monthlyClimate) && parsed.monthlyClimate.length === 12) {
               setMonthlyClimate(parsed.monthlyClimate);

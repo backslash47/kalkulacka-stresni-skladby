@@ -32,6 +32,7 @@ test("server renders the roof calculator", async () => {
   assert.match(html, /<title>Kalkulačka střešní skladby \| Střešní fyzika<\/title>/i);
   assert.match(html, /S vatou/);
   assert.match(html, /Bez vaty/);
+  assert.match(html, /PIR deska/);
   assert.match(html, /Vnitřní a vnější podmínky/);
   assert.match(html, /Vrstvy varianty/);
   assert.match(html, /Měsíční bilance kondenzace a vysychání/);
@@ -47,5 +48,6 @@ test("server renders the roof calculator", async () => {
   assert.match(html, /Kondenzační potenciál/);
   assert.match(html, /Relativní vlhkost se nezobrazuje nad 100 %/);
   assert.doesNotMatch(html, /Maximum nasycení/);
+  assert.doesNotMatch(html, /Kingspan Therma TR26/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });

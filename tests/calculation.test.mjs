@@ -5,6 +5,7 @@ import {
   calculateProfile,
   dewPoint,
   equilibriumWoodMoisture,
+  layerResistance,
   saturationPressure,
 } from "../app/calculation.mjs";
 
@@ -73,6 +74,16 @@ test("computes equilibrium wood moisture from temperature and relative humidity"
   assert.ok(Math.abs(equilibriumWoodMoisture(20, 65) - 12) < 0.02);
   assert.ok(Math.abs(equilibriumWoodMoisture(20, 90) - 20.53) < 0.02);
   assert.ok(equilibriumWoodMoisture(20, 95) > equilibriumWoodMoisture(20, 85));
+});
+
+test("automatically scales PIR thermal and diffusion resistance with thickness", () => {
+  const pir120 = layer("pir", "PIR deska", 120, 0.022, 260);
+  const pir200 = layer("pir", "PIR deska", 200, 0.022, 260);
+
+  assert.ok(Math.abs(layerResistance(pir120).thermal - 5.4545) < 0.0001);
+  assert.ok(Math.abs(layerResistance(pir120).diffusion - 31.2) < 0.0001);
+  assert.ok(Math.abs(layerResistance(pir200).thermal - 9.0909) < 0.0001);
+  assert.ok(Math.abs(layerResistance(pir200).diffusion - 52) < 0.0001);
 });
 
 test("reproduces the configured with-wool screening result", () => {
