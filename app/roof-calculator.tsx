@@ -16,6 +16,10 @@ import {
 } from "./presets";
 
 type Surfaces = { inside: number; outside: number };
+type AirTightness = "continuous" | "uncertain" | "leaky";
+type WoodSettings = { airTightness: AirTightness };
+
+const defaultWoodSettings: WoodSettings = { airTightness: "leaky" };
 
 const numberFormat = new Intl.NumberFormat("cs-CZ", { maximumFractionDigits: 2 });
 const preciseFormat = new Intl.NumberFormat("cs-CZ", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -36,6 +40,13 @@ function cloneDefaultVariants() {
 
 function cloneDefaultMonthlyClimate() {
   return defaultMonthlyClimate.map((month) => ({ ...month }));
+}
+
+function inferredWoodKind(layer: Layer): "none" | "solid" | "osb" {
+  if (layer.woodKind) return layer.woodKind;
+  const name = layer.name.toLocaleLowerCase("cs");
+  if (/osb|dřevotří|drevotri/.test(name)) return "osb";
+  return /dřev|drev|smrk|trám|tram|bedněn|bednen/.test(name) ? "solid" : "none";
 }
 
 function ProfileChart({ result }: { result: ReturnType<typeof calculateProfile> }) {
@@ -361,6 +372,8 @@ export default function RoofCalculator() {
   const [activeId, setActiveId] = useState("with-wool");
   const [materialIndex, setMaterialIndex] = useState(3);
   const [monthlyViewId, setMonthlyViewId] = useState("all");
+  const [woodViewId, setWoodViewId] = useState("");
+  const [woodSettings, setWoodSettings] = useState<WoodSettings>({ ...defaultWoodSettings });
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -377,6 +390,9 @@ export default function RoofCalculator() {
             if (Array.isArray(parsed.monthlyClimate) && parsed.monthlyClimate.length === 12) {
               setMonthlyClimate(parsed.monthlyClimate);
             }
+            if (["continuous", "uncertain", "leaky"].includes(parsed.woodSettings?.airTightness)) {
+              setWoodSettings(parsed.woodSettings);
+            }
           }
         }
       } catch {
@@ -392,9 +408,9 @@ export default function RoofCalculator() {
     if (!hydrated) return;
     window.localStorage.setItem(
       "roof-physics-project-v1",
-      JSON.stringify({ conditions, monthlyClimate, surfaces, variants, activeId }),
+      JSON.stringify({ conditions, monthlyClimate, surfaces, variants, activeId, woodSettings }),
     );
-  }, [activeId, conditions, hydrated, monthlyClimate, surfaces, variants]);
+  }, [activeId, conditions, hydrated, monthlyClimate, surfaces, variants, woodSettings]);
 
   const activeVariant = variants.find((variant) => variant.id === activeId) ?? variants[0];
   const comparison = useMemo(
@@ -405,8 +421,8 @@ export default function RoofCalculator() {
     ?? calculateProfile([], conditions, surfaces);
   const activePeakLayer = activeVariant?.layers.find((layer) => layer.id === activeResult.peakRisk?.layerId);
   const monthlyResult = useMemo(
-    () => calculateMonthlyBalance(activeVariant?.layers ?? [], monthlyClimate, surfaces),
-    [activeVariant, monthlyClimate, surfaces],
+    () => calculateMonthlyBalance(activeVariant?.layers ?? [], monthlyClimate, surfaces, woodSettings),
+    [activeVariant, monthlyClimate, surfaces, woodSettings],
   );
   const monthlyViews = useMemo(() => [
     {
@@ -421,6 +437,10 @@ export default function RoofCalculator() {
     ...monthlyResult.locations,
   ], [monthlyResult]);
   const monthlyView = monthlyViews.find((view) => view.id === monthlyViewId) ?? monthlyViews[0];
+  const woodAssessment = monthlyResult.woodAssessment;
+  const woodView = woodAssessment.elements.find((element) => element.id === woodViewId)
+    ?? woodAssessment.elements[0]
+    ?? null;
 
   const updateCondition = (key: keyof Conditions, value: number) => {
     setConditions((current) => ({ ...current, [key]: value }));
@@ -449,6 +469,14 @@ export default function RoofCalculator() {
       ...variant,
       layers: variant.layers.map((layer) => layer.id === layerId ? { ...layer, ...changes } : layer),
     }));
+  };
+
+  const updateWoodKind = (layer: Layer, woodKind: "none" | "solid" | "osb") => {
+    updateLayer(layer.id, {
+      woodKind,
+      densityKgM3: woodKind === "osb" ? 600 : woodKind === "solid" ? 450 : layer.densityKgM3,
+      initialMoisturePercent: woodKind === "osb" ? 10 : woodKind === "solid" ? 12 : layer.initialMoisturePercent,
+    });
   };
 
   const moveLayer = (index: number, direction: -1 | 1) => {
@@ -496,6 +524,8 @@ export default function RoofCalculator() {
     setSurfaces({ inside: 0.1, outside: 0.04 });
     setVariants(cloneDefaultVariants());
     setActiveId("with-wool");
+    setWoodSettings({ ...defaultWoodSettings });
+    setWoodViewId("");
   };
 
   const download = (filename: string, content: string, type: string) => {
@@ -509,7 +539,7 @@ export default function RoofCalculator() {
   const exportProject = () => {
     download(
       "stresni-skladba.json",
-      JSON.stringify({ version: 2, conditions, monthlyClimate, surfaces, variants }, null, 2),
+      JSON.stringify({ version: 3, conditions, monthlyClimate, surfaces, variants, woodSettings }, null, 2),
       "application/json",
     );
   };
@@ -535,6 +565,27 @@ export default function RoofCalculator() {
     ];
     download(
       `mesicni-bilance-${activeVariant.id}.csv`,
+      `\uFEFF${rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(";")).join("\n")}`,
+      "text/csv;charset=utf-8",
+    );
+  };
+
+  const exportWoodCsv = () => {
+    const rows = [
+      ["Prvek", "Typ", "Měsíc", "Teplota kritického místa [°C]", "RH kritického místa [%]", "Rovnovážná vlhkost dřeva [%]", "Kondenzace v kontaktu [g/m²]", "Uložený kondenzát v kontaktu [g/m²]"],
+      ...woodAssessment.elements.flatMap((element) => element.months.map((month) => [
+        element.label,
+        element.woodKindLabel,
+        month.month,
+        format(month.temperature, 2),
+        format(month.relativeHumidity, 1),
+        format(month.equilibriumMoisturePercent, 2),
+        format(month.condensationGm2, 2),
+        format(month.storedGm2, 2),
+      ])),
+    ];
+    download(
+      `riziko-dreva-${activeVariant.id}.csv`,
       `\uFEFF${rows.map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(";")).join("\n")}`,
       "text/csv;charset=utf-8",
     );
@@ -577,6 +628,13 @@ export default function RoofCalculator() {
         ? { label: "Sezónně kondenzuje, ale vyschne", detail: "Během chladné části roku vzniká kondenzát, který se v ročním cyklu zcela odpaří." }
         : { label: "Sezónně kondenzuje, bilance je vyrovnaná", detail: "Mezi roky vlhkost nenarůstá, ale model v žádném měsíci neukazuje úplné vyschnutí celé skladby." }
       : { label: "Bez měsíční kondenzace", detail: "V žádném měsíci nevzniká v posuzované skladbě kladná bilance kondenzace." };
+  const woodStatusCopy = woodAssessment.status === "risk"
+    ? { label: "Vysoké vlhkostní riziko dřeva", detail: "Nejnepříznivější prvek překračuje screeningové meze, má vysokou počáteční vlhkost nebo u něj zásoba kondenzátu narůstá." }
+    : woodAssessment.computedStatus === "safe" && woodAssessment.status === "warning"
+      ? { label: "Difuzně příznivé, ale netěsnost zůstává", detail: "Měsíční difuzní model nevykazuje kritickou vlhkost dřeva. Netěsný podhled však může přivést do skladby další vlhkost prouděním, kterou číselný výsledek neobsahuje." }
+      : woodAssessment.status === "warning"
+        ? { label: "Zvýšené vlhkostní riziko", detail: "Alespoň jeden dřevěný prvek se dostává do zvýšené vlhkosti nebo do kontaktu s kondenzátem." }
+        : { label: "Nízké riziko v difuzním modelu", detail: "Dřevěné prvky zůstávají pod screeningovými mezemi a model u nich nezachytil kapalný kondenzát." };
 
   return (
     <main>
@@ -666,6 +724,8 @@ export default function RoofCalculator() {
                 <th><HelpTerm label="μ [–]" help="Faktor difuzního odporu vůči vodní páře. Vyšší μ znamená menší propustnost pro vodní páru." /></th>
                 <th><HelpTerm label="Vlastní R" help="Ručně zadaný tepelný odpor vrstvy v m²K/W. Pokud pole zůstane prázdné, vypočte se z d a λ." /></th>
                 <th><HelpTerm label="Vlastní sd [m]" help="Ručně zadaná ekvivalentní difuzní tloušťka. Pokud pole zůstane prázdné, vypočte se jako tloušťka × μ." /></th>
+                <th><HelpTerm label="Dřevěný prvek" help="Určuje, zda se pro vrstvu vyhodnotí vlhkostní riziko rostlého dřeva nebo OSB/desky." /></th>
+                <th><HelpTerm label="ρ / u₀" help="Objemová hmotnost dřeva ρ v kg/m³ a předpokládaná počáteční hmotnostní vlhkost u₀ v procentech." /></th>
                 <th><HelpTerm label="Výsledné R / sd" help="Tepelný odpor R v m²K/W a ekvivalentní difuzní tloušťka sd v metrech, které výpočet skutečně používá." /></th>
                 <th>Akce</th>
               </tr>
@@ -673,6 +733,9 @@ export default function RoofCalculator() {
             <tbody>
               {activeVariant.layers.map((layer, index) => {
                 const resistance = layerResistance(layer);
+                const woodKind = inferredWoodKind(layer);
+                const densityKgM3 = layer.densityKgM3 ?? (woodKind === "osb" ? 600 : 450);
+                const initialMoisturePercent = layer.initialMoisturePercent ?? (woodKind === "osb" ? 10 : 12);
                 return (
                   <tr key={layer.id} className={layer.enabled ? "" : "disabled-row"}>
                     <td><input aria-label={`Zahrnout ${layer.name}`} type="checkbox" checked={layer.enabled} onChange={(event) => updateLayer(layer.id, { enabled: event.target.checked })} /></td>
@@ -682,6 +745,8 @@ export default function RoofCalculator() {
                     <td><input aria-label={`Mí ${layer.name}`} type="number" min="0" step="1" value={layer.mu} onChange={(event) => updateLayer(layer.id, { mu: Number(event.target.value) })} /></td>
                     <td><input aria-label={`Vlastní R ${layer.name}`} type="number" min="0" step="0.01" placeholder="auto" value={layer.fixedR ?? ""} onChange={(event) => updateLayer(layer.id, { fixedR: event.target.value === "" ? null : Number(event.target.value) })} /></td>
                     <td><input aria-label={`Vlastní sd ${layer.name}`} type="number" min="0" step="0.01" placeholder="auto" value={layer.fixedSd ?? ""} onChange={(event) => updateLayer(layer.id, { fixedSd: event.target.value === "" ? null : Number(event.target.value) })} /></td>
+                    <td><select className="wood-kind-select" aria-label={`Typ dřevěného prvku ${layer.name}`} value={woodKind} onChange={(event) => updateWoodKind(layer, event.target.value as "none" | "solid" | "osb")}><option value="none">Ne</option><option value="solid">Rostlé dřevo</option><option value="osb">OSB / deska</option></select></td>
+                    <td><div className="wood-property-inputs"><label title="Objemová hmotnost"><input aria-label={`Objemová hmotnost ${layer.name}`} type="number" min="100" max="1200" step="10" disabled={woodKind === "none"} value={woodKind === "none" ? "" : densityKgM3} onChange={(event) => updateLayer(layer.id, { densityKgM3: Number(event.target.value) })} /><span>kg/m³</span></label><label title="Počáteční vlhkost"><input aria-label={`Počáteční vlhkost ${layer.name}`} type="number" min="0" max="100" step="0.5" disabled={woodKind === "none"} value={woodKind === "none" ? "" : initialMoisturePercent} onChange={(event) => updateLayer(layer.id, { initialMoisturePercent: Number(event.target.value) })} /><span>%</span></label></div></td>
                     <td className="calculated-cell"><b>{format(resistance.thermal, 3)}</b><small>{format(resistance.diffusion, 2)} m</small></td>
                     <td><div className="row-actions">
                       <button type="button" disabled={index === 0} onClick={() => moveLayer(index, -1)} title="Posunout nahoru">↑</button>
@@ -696,7 +761,7 @@ export default function RoofCalculator() {
           </table>
         </div>
         <div className="term-legend" aria-label="Vysvětlivky k vlastnostem vrstev">
-          <strong>Vysvětlivky:</strong><span><b>d</b> tloušťka</span><span><b>λ</b> tepelná vodivost</span><span><b>μ</b> difuzní faktor</span><span><b>R</b> tepelný odpor</span><span><b>sd</b> difuzní odpor vyjádřený ekvivalentní tloušťkou vzduchu</span>
+          <strong>Vysvětlivky:</strong><span><b>d</b> tloušťka</span><span><b>λ</b> tepelná vodivost</span><span><b>μ</b> difuzní faktor</span><span><b>R</b> tepelný odpor</span><span><b>sd</b> difuzní odpor vyjádřený ekvivalentní tloušťkou vzduchu</span><span><b>ρ</b> objemová hmotnost dřeva</span><span><b>u₀</b> počáteční hmotnostní vlhkost</span>
         </div>
         <div className="add-layer-bar">
           <select aria-label="Materiál k přidání" value={materialIndex} onChange={(event) => setMaterialIndex(Number(event.target.value))}>
@@ -844,10 +909,89 @@ export default function RoofCalculator() {
         </div>
       </section>
 
+      <section className="wood-panel">
+        <div className="section-heading wood-heading">
+          <div><span className="step">07</span><div><h2>Riziko pro dřevěné prvky</h2><p>Rovnovážná vlhkost, doba expozice a kontakt s kondenzátem · varianta „{activeVariant.name}“</p></div></div>
+          <div className="wood-actions">
+            <label>Vzduchotěsnost teplé strany
+              <select value={woodSettings.airTightness} onChange={(event) => setWoodSettings({ airTightness: event.target.value as AirTightness })}>
+                <option value="continuous">Souvislá a ověřená</option>
+                <option value="uncertain">Nejistá</option>
+                <option value="leaky">Netěsná – vaše zadání</option>
+              </select>
+            </label>
+            <button className="outline-button" type="button" onClick={exportWoodCsv} disabled={woodAssessment.elements.length === 0}>Stáhnout CSV</button>
+          </div>
+        </div>
+
+        {woodAssessment.elements.length > 0 ? (
+          <>
+            <div className={`wood-callout ${woodAssessment.status}`}>
+              <div><span className="summary-label">Screening dřeva</span><strong>{woodStatusCopy.label}</strong><p>{woodStatusCopy.detail}</p></div>
+              <dl>
+                <div><dt>Rozhodující prvek</dt><dd>{woodAssessment.governingElement?.label ?? "—"}</dd></div>
+                <div><dt>Maximum u<sub>eq</sub></dt><dd>{format(woodAssessment.governingElement?.peakEquilibriumMoisturePercent ?? 0, 1)} %</dd></div>
+              </dl>
+            </div>
+
+            <div className="wood-metrics">
+              <article><span><HelpTerm label="Maximum ueq" help="Nejvyšší rovnovážná hmotnostní vlhkost vypočtená z měsíční teploty a relativní vlhkosti v rozhodujícím prvku. Není to měření ani okamžitá vlhkost celého průřezu." align="left" /></span><strong>{format(woodAssessment.governingElement?.peakEquilibriumMoisturePercent ?? 0, 1)}</strong><small>% hmotnosti</small></article>
+              <article><span><HelpTerm label="Dny nad 16 %" help="Součet dnů v měsících, jejichž průměrné podmínky odpovídají rovnovážné vlhkosti alespoň 16 %. Jde o měsíční screening, nikoli hodinový údaj." align="left" /></span><strong>{format(woodAssessment.governingElement?.daysAbove16Percent ?? 0, 0)}</strong><small>dnů za rok</small></article>
+              <article><span><HelpTerm label="Dny nad 20 %" help="Součet dnů v měsících s rovnovážnou vlhkostí alespoň 20 %. Delší teplé a vlhké období zvyšuje riziko biologického napadení." align="left" /></span><strong>{format(woodAssessment.governingElement?.daysAbove20Percent ?? 0, 0)}</strong><small>dnů za rok</small></article>
+              <article className={woodAssessment.governingElement?.annualChangeGm2 > 0.001 ? "danger-metric" : "safe-metric"}><span><HelpTerm label="Kondenzát v kontaktu" help="Kondenzát vzniklý přímo uvnitř dřevěné vrstvy nebo na některém z jejích rozhraní. Není automaticky převeden na vlhkost celého průřezu." align="right" /></span><strong>{format(woodAssessment.governingElement?.annualCondensationGm2 ?? 0, 1)}</strong><small>g/m² za cyklus</small></article>
+            </div>
+
+            <div className="layer-table-wrap">
+              <table className="result-table wood-result-table">
+                <thead><tr><th>Prvek</th><th><HelpTerm label="Typ / vstup" help="Druh prvku, objemová hmotnost ρ a počáteční vlhkost u₀ nastavené v tabulce vrstev." /></th><th><HelpTerm label="Max. ueq" help="Maximum rovnovážné vlhkosti ve vypočteném ročním cyklu." /></th><th><HelpTerm label="≥ 16 %" help="Počet dnů podle měsíčních průměrů nad orientační zvýšenou mezí 16 %." /></th><th><HelpTerm label="≥ 20 %" help="Počet dnů podle měsíčních průměrů nad praktickou rizikovou mezí 20 %." /></th><th><HelpTerm label="Kondenzát" help="Roční vznik kondenzátu v kontaktu s prvkem. Doplňkový přepočet ukazuje jen ekvivalent při nereálném rovnoměrném rozdělení maxima do celé tloušťky prvku." /></th><th><HelpTerm label="Roční změna" help="Meziroční změna zásoby kapalného kondenzátu v kontaktu s prvkem." /></th><th>Výsledek</th></tr></thead>
+                <tbody>{woodAssessment.elements.map((element) => (
+                  <tr key={element.id} className={woodView?.id === element.id ? "selected-location" : ""}>
+                    <td><button type="button" className="location-select-button" onClick={() => setWoodViewId(element.id)}>{element.label}</button></td>
+                    <td><span className="wood-type-copy">{element.woodKindLabel}<small>ρ {format(element.densityKgM3, 0)} kg/m³ · u₀ {format(element.initialMoisturePercent, 1)} %</small></span></td>
+                    <td><strong>{format(element.peakEquilibriumMoisturePercent, 1)} %</strong></td>
+                    <td>{format(element.daysAbove16Percent, 0)} dnů</td>
+                    <td>{format(element.daysAbove20Percent, 0)} dnů</td>
+                    <td className="condensation-value"><span className="wood-type-copy">{format(element.annualCondensationGm2, 2)} g/m²<small>ekv. max. {format(element.liquidEquivalentPercent, 3)} %</small></span></td>
+                    <td>{format(element.annualChangeGm2, 2)} g/m²</td>
+                    <td><span className={`result-badge ${element.status}`}>{element.status === "risk" ? "Vysoké" : element.status === "warning" ? "Zvýšené" : "Nízké"}</span></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+
+            {woodView && <div className="wood-detail">
+              <div className="monthly-chart-copy">
+                <div><h3>Průběh vlhkostního indikátoru · {woodView.label}</h3><p>Tabulka ukazuje vždy nejnepříznivější bod daného prvku v každém měsíci.</p></div>
+              </div>
+              <div className="monthly-view-tabs" role="tablist" aria-label="Zobrazený dřevěný prvek">
+                {woodAssessment.elements.map((element) => <button key={element.id} type="button" role="tab" aria-selected={woodView.id === element.id} className={woodView.id === element.id ? "active" : ""} onClick={() => setWoodViewId(element.id)}>{element.label}</button>)}
+              </div>
+              <div className="layer-table-wrap">
+                <table className="result-table wood-monthly-table">
+                  <thead><tr><th>Měsíc</th><th><HelpTerm label="T [°C]" help="Teplota v nejnepříznivějším hodnoceném bodě prvku." /></th><th><HelpTerm label="RH [%]" help="Relativní vlhkost v nejnepříznivějším bodě po započtení současných kondenzačních míst." /></th><th><HelpTerm label="ueq [%]" help="Rovnovážná hmotnostní vlhkost dřeva odpovídající vypočtené teplotě a RH." /></th><th><HelpTerm label="Poloha" help="Vzdálenost nejnepříznivějšího bodu od interiéru." /></th><th><HelpTerm label="Kondenzace" help="Kondenzát vzniklý v daném měsíci v kontaktu s prvkem." /></th><th><HelpTerm label="Uloženo" help="Kapalný kondenzát, který na konci měsíce zůstává v kontaktu s prvkem." /></th><th>Hodnocení</th></tr></thead>
+                  <tbody>{woodView.months.map((month) => (
+                    <tr key={month.id} className={month.status === "risk" ? "wet-month" : ""}>
+                      <td>{month.month}</td><td>{format(month.temperature, 1)} °C</td><td>{format(month.relativeHumidity, 1)} %</td><td><strong>{format(month.equilibriumMoisturePercent, 1)} %</strong></td><td>{format(month.worstPositionMm, 0)} mm</td><td className="condensation-value">{format(month.condensationGm2, 2)} g/m²</td><td>{format(month.storedGm2, 2)} g/m²</td><td><span className={`result-badge ${month.status}`}>{month.status === "risk" ? "≥ 20 %" : month.status === "warning" ? "Zvýšené" : "Nízké"}</span></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            </div>}
+          </>
+        ) : (
+          <p className="monthly-empty">Ve vrstvách není označen žádný dřevěný prvek. Typ můžete nastavit ve sloupci „Dřevěný prvek“.</p>
+        )}
+
+        <div className="wood-note">
+          <p><strong>Význam u<sub>eq</sub>:</strong> rovnovážná vlhkost vyjadřuje, k jaké vlhkosti by dřevo při daném měsíčním klimatu směřovalo. Neříká, že jí celý průřez během jednoho měsíce skutečně dosáhne. Pro OSB je vztah pouze orientační náhradou bez produktové sorpční křivky.</p>
+          <p className={woodAssessment.airLeakageWarning ? "air-warning" : ""}><strong>Proudění vzduchu:</strong> volba vzduchotěsnosti nemění číselný difuzní výpočet. U netěsné nebo neznámé teplé strany přidává kvalitativní varování, protože množství vlhkosti proudící netěsnostmi bez měření nelze věrohodně určit.</p>
+        </div>
+      </section>
+
       <section className="method-panel">
         <h2>Co tento výpočet znamená</h2>
         <div className="method-columns">
-          <p><strong>Umí:</strong> jednorozměrný profil teploty a vodní páry, rosný bod, U a propojenou měsíční bilanci difuzní kondenzace a odpařování ve více místech.</p>
+          <p><strong>Umí:</strong> jednorozměrný profil teploty a vodní páry, rosný bod, U, propojenou měsíční bilanci ve více místech a konzervativní screening vlhkostního rizika označených dřevěných prvků.</p>
           <p><strong>Neumí:</strong> déšť, sluneční a dlouhovlnné záření, zabudovanou vlhkost, kapilární transport, proudění netěsnostmi ani přesné 2D křížení trámů.</p>
           <p><strong>Použití:</strong> vhodné pro porovnání variant a odhalení problémových skladeb. Pro realizační projekt ověřte kritickou skladbu dynamickým hygrotermickým výpočtem.</p>
         </div>

@@ -18,6 +18,8 @@ a teoretického rizika kondenzace ve střešní konstrukci.
 - tabulka výsledků na rozhraních vrstev,
 - propojená měsíční bilance kondenzace a vysychání ve více místech s upravitelným klimatem,
 - samostatné výsledky, graf a tabulka nahromaděné vlhkosti pro každé nalezené místo,
+- screening dřevěných prvků podle rovnovážné vlhkosti, délky expozice a kontaktu s kondenzátem,
+- nastavitelné rozpoznání rostlého dřeva a OSB, objemová hmotnost, počáteční vlhkost a stav vzduchotěsnosti,
 - export konfigurace do JSON a obou výpočtů do CSV,
 - automatické uložení rozpracovaného zadání v prohlížeči.
 
@@ -30,10 +32,19 @@ v jednom tlakovém profilu a vede zásobu kondenzátu pro každé místo do dal�
 měsíců. Výchozí venkovní data jsou měsíční klimatologie NASA POWER 2001–2020
 pro Brno.
 
+U vrstev označených jako dřevo nebo OSB se z měsíční teploty a relativní
+vlhkosti počítá rovnovážná hmotnostní vlhkost podle Hailwoodovy–Horrobinovy
+rovnice. Aplikace samostatně sleduje dobu nad 16 a 20 %, kondenzát v kontaktu
+s prvkem a jeho meziroční změnu. Pro OSB jde bez produktové sorpční křivky o
+orientační náhradní vztah. Nastavení netěsné teplé strany přidává
+kvalitativní varování, ale nevymýšlí neznámé množství proudící vlhkosti.
+
 Jde o zjednodušený měsíční Glaserův screening, nikoli dynamickou hygrotermickou
 simulaci. Neřeší déšť, sluneční a dlouhovlnné záření, zabudovanou vlhkost,
 kapilární transport, proudění vzduchu netěsnostmi ani přesný dvourozměrný vliv
-křížení trámů.
+křížení trámů. Rovnovážná vlhkost není předpovědí okamžité průměrné vlhkosti
+celého průřezu a screening nenahrazuje měření ani dynamickou hygrotermickou
+simulaci.
 
 ## Lokální spuštění
 

@@ -9,6 +9,9 @@ export type Layer = {
   enabled: boolean;
   color: string;
   note?: string;
+  woodKind?: "none" | "solid" | "osb";
+  densityKgM3?: number;
+  initialMoisturePercent?: number;
 };
 
 export type Conditions = {
@@ -49,7 +52,12 @@ function layer(id: string, name: string, thicknessMm: number, lambda: number, mu
 }
 
 const exteriorLayers = (prefix: string): Layer[] => [
-  layer(`${prefix}-osb`, "OSB/3 Kronospan", 25, 0.1, 100, colors.osb, { note: "μ pro vlhký stav" }),
+  layer(`${prefix}-osb`, "OSB/3 Kronospan", 25, 0.1, 100, colors.osb, {
+    note: "μ pro vlhký stav; výpočet vlhkosti OSB používá orientační náhradní sorpční vztah pro dřevo",
+    woodKind: "osb",
+    densityKgM3: 600,
+    initialMoisturePercent: 10,
+  }),
   layer(`${prefix}-glastek`, "GLASTEK 40 STICKER PLUS", 4, 0.17, 27000, colors.asphalt, { fixedSd: 108 }),
   layer(`${prefix}-pir`, "Kingspan Therma TR26", 160, 0.022, 260, colors.pir, { fixedR: 7.25, fixedSd: 41.6, note: "Kompozitní deska: R a celkové sd zahrnují obě fólie. Přesná poloha prvního překročení uvnitř desky je proto orientační; rozhraní vrstev je podstatnější." }),
   layer(`${prefix}-pvc`, "Sikaplan G-18", 1.8, 0.16, 20000, colors.membrane, { fixedSd: 36 }),
@@ -57,7 +65,11 @@ const exteriorLayers = (prefix: string): Layer[] => [
 
 const interiorLayers = (prefix: string): Layer[] => [
   layer(`${prefix}-plaster`, "Vápenocementová omítka", 20, 0.87, 10, colors.plaster),
-  layer(`${prefix}-boarding`, "Smrkové bednění", 20, 0.13, 20, colors.wood),
+  layer(`${prefix}-boarding`, "Smrkové bednění", 20, 0.13, 20, colors.wood, {
+    woodKind: "solid",
+    densityKgM3: 450,
+    initialMoisturePercent: 12,
+  }),
 ];
 
 export const presetDefinitions = {
@@ -78,7 +90,11 @@ export const presetDefinitions = {
       ...interiorLayers(prefix),
       layer(`${prefix}-wool`, "DEKwool G 035r", 180, 0.035, 1, colors.wool),
       layer(`${prefix}-air`, "Uzavřená vzduchová mezera", 20, 0.15, 1, colors.air, { fixedR: 0.16, fixedSd: 0.02 }),
-      layer(`${prefix}-slope`, "Spádový trám – maximum", 200, 0.13, 20, colors.wood),
+      layer(`${prefix}-slope`, "Spádový trám – maximum", 200, 0.13, 20, colors.wood, {
+        woodKind: "solid",
+        densityKgM3: 450,
+        initialMoisturePercent: 12,
+      }),
       ...exteriorLayers(prefix),
     ],
   },
@@ -96,8 +112,16 @@ export const presetDefinitions = {
     description: "Lokální kritické místo v nejvyšším bodě",
     make: (prefix = "nw") => [
       ...interiorLayers(prefix),
-      layer(`${prefix}-main`, "Hlavní trám", 200, 0.13, 20, colors.wood),
-      layer(`${prefix}-slope`, "Spádový trám – maximum", 200, 0.13, 20, colors.wood),
+      layer(`${prefix}-main`, "Hlavní trám", 200, 0.13, 20, colors.wood, {
+        woodKind: "solid",
+        densityKgM3: 450,
+        initialMoisturePercent: 12,
+      }),
+      layer(`${prefix}-slope`, "Spádový trám – maximum", 200, 0.13, 20, colors.wood, {
+        woodKind: "solid",
+        densityKgM3: 450,
+        initialMoisturePercent: 12,
+      }),
       ...exteriorLayers(prefix),
     ],
   },
@@ -161,10 +185,10 @@ export const defaultVariants: Variant[] = [
 export const materialLibrary: Omit<Layer, "id">[] = [
   layer("", "Sádrokarton", 12.5, 0.25, 10, colors.gypsum),
   layer("", "Vápenocementová omítka", 20, 0.87, 10, colors.plaster),
-  layer("", "Jehličnaté dřevo", 20, 0.13, 20, colors.wood),
+  layer("", "Jehličnaté dřevo", 20, 0.13, 20, colors.wood, { woodKind: "solid", densityKgM3: 450, initialMoisturePercent: 12 }),
   layer("", "Minerální vata", 180, 0.035, 1, colors.wool),
   layer("", "Uzavřená vzduchová vrstva", 20, 0.15, 1, colors.air, { fixedR: 0.16, fixedSd: 0.02 }),
-  layer("", "OSB/3", 25, 0.1, 100, colors.osb),
+  layer("", "OSB/3", 25, 0.1, 100, colors.osb, { woodKind: "osb", densityKgM3: 600, initialMoisturePercent: 10 }),
   layer("", "Asfaltový pás", 4, 0.17, 27000, colors.asphalt),
   layer("", "PIR deska", 160, 0.022, 60, colors.pir),
   layer("", "PVC-P střešní fólie", 1.8, 0.16, 20000, colors.membrane),

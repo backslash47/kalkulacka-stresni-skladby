@@ -4,6 +4,7 @@ import {
   calculateMonthlyBalance,
   calculateProfile,
   dewPoint,
+  equilibriumWoodMoisture,
   saturationPressure,
 } from "../app/calculation.mjs";
 
@@ -68,6 +69,12 @@ test("computes saturation pressure and dew point at the indoor state", () => {
   assert.ok(Math.abs(dewPoint(pressure) - 10.19) < 0.02);
 });
 
+test("computes equilibrium wood moisture from temperature and relative humidity", () => {
+  assert.ok(Math.abs(equilibriumWoodMoisture(20, 65) - 12) < 0.02);
+  assert.ok(Math.abs(equilibriumWoodMoisture(20, 90) - 20.53) < 0.02);
+  assert.ok(equilibriumWoodMoisture(20, 95) > equilibriumWoodMoisture(20, 85));
+});
+
 test("reproduces the configured with-wool screening result", () => {
   const result = calculateProfile([
     ...interior,
@@ -119,6 +126,65 @@ test("balances seasonal condensation and drying across the calendar boundary", (
   assert.ok(result.months.every((month) => month.storedGm2 >= 0));
 });
 
+test("finds the OSB moisture risk with wool while keeping the no-wool field diffusion-safe", () => {
+  const withWool = calculateMonthlyBalance([
+    ...interior,
+    layer("wool", "Vata", 180, 0.035, 1),
+    layer("air", "Dutina", 220, 0.15, 1, 0.16, 0.22),
+    ...exterior,
+  ], brnoClimate, undefined, { airTightness: "continuous" });
+  const noWool = calculateMonthlyBalance([
+    ...interior,
+    layer("air", "Dutina", 400, 0.15, 1, 0.16, 0.4),
+    ...exterior,
+  ], brnoClimate, undefined, { airTightness: "continuous" });
+  const wetOsb = withWool.woodAssessment.elements.find((element) => element.layerId === "osb");
+  const dryOsb = noWool.woodAssessment.elements.find((element) => element.layerId === "osb");
+
+  assert.equal(wetOsb.status, "risk");
+  assert.ok(wetOsb.peakEquilibriumMoisturePercent > 20);
+  assert.ok(wetOsb.daysAbove20Percent >= 60);
+  assert.equal(dryOsb.status, "safe");
+  assert.ok(dryOsb.peakEquilibriumMoisturePercent < 16);
+  assert.equal(noWool.woodAssessment.status, "safe");
+});
+
+test("keeps air leakage as a qualitative warning instead of adding invented moisture", () => {
+  const result = calculateMonthlyBalance([
+    ...interior,
+    layer("air", "Dutina", 400, 0.15, 1, 0.16, 0.4),
+    ...exterior,
+  ], brnoClimate, undefined, { airTightness: "leaky" });
+
+  assert.equal(result.woodAssessment.computedStatus, "safe");
+  assert.equal(result.woodAssessment.status, "warning");
+  assert.equal(result.woodAssessment.airLeakageWarning, true);
+});
+
+test("respects configured wood type, density, and initial moisture", () => {
+  const configuredWood = {
+    ...layer("custom-wood", "Vlastní vrstva", 50, 0.13, 20),
+    woodKind: "solid",
+    densityKgM3: 520,
+    initialMoisturePercent: 22,
+  };
+  const excludedOsb = {
+    ...layer("excluded-osb", "OSB vypnuté pro screening", 20, 0.1, 100),
+    woodKind: "none",
+  };
+  const result = calculateMonthlyBalance([
+    layer("plaster", "Omítka", 15, 0.8, 10),
+    configuredWood,
+    excludedOsb,
+    layer("outer", "Vnější izolace", 160, 0.03, 50),
+  ], brnoClimate, undefined, { airTightness: "continuous" });
+
+  assert.equal(result.woodAssessment.elements.length, 1);
+  assert.equal(result.woodAssessment.elements[0].densityKgM3, 520);
+  assert.equal(result.woodAssessment.elements[0].initialMoisturePercent, 22);
+  assert.equal(result.woodAssessment.elements[0].status, "risk");
+});
+
 test("separates simultaneous condensation locations and balances them as one coupled profile", () => {
   const extremeYear = brnoClimate.map((month) => ({ ...month, ...conditions }));
   const result = calculateMonthlyBalance([
@@ -143,6 +209,7 @@ test("separates simultaneous condensation locations and balances them as one cou
   assert.ok(result.locations.every((location) => (
     location.months.every((month) => month.storedGm2 >= 0)
   )));
+  assert.ok(result.woodAssessment.elements.find((element) => element.layerId === "osb").annualCondensationGm2 > 0);
 });
 
 test("marks a construction with a positive annual moisture balance as risk", () => {

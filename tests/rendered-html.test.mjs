@@ -36,6 +36,9 @@ test("server renders the roof calculator", async () => {
   assert.match(html, /Vrstvy varianty/);
   assert.match(html, /Měsíční bilance kondenzace a vysychání/);
   assert.match(html, /Místa kondenzace a vysychání/);
+  assert.match(html, /Riziko pro dřevěné prvky/);
+  assert.match(html, /Rovnovážná vlhkost/);
+  assert.match(html, /Netěsná – vaše zadání/);
   assert.match(html, /Celá skladba/);
   assert.match(html, /v každém měsíci řeší současně/);
   assert.match(html, /Klimatické zkratky/);

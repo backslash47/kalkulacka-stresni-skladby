@@ -17,6 +17,23 @@ export function dewPoint(pressure) {
     : (265.5 * logarithm) / (21.875 - logarithm);
 }
 
+// Hailwoodova–Horrobinova rovnice v podobě používané v USDA Wood Handbook.
+// Výsledek je rovnovážná hmotnostní vlhkost dřeva, nikoli předpověď okamžité
+// vlhkosti celého průřezu.
+export function equilibriumWoodMoisture(temperature, relativeHumidity) {
+  const t = Math.min(80, Math.max(-30, Number(temperature) || 0));
+  const h = Math.min(0.999, Math.max(0, Number(relativeHumidity) || 0) / 100);
+  const w = 349 + 1.29 * t + 0.0135 * t * t;
+  const k = 0.805 + 0.000736 * t - 0.00000273 * t * t;
+  const k1 = 6.27 - 0.00938 * t - 0.000303 * t * t;
+  const k2 = 1.91 + 0.0407 * t - 0.000293 * t * t;
+  const kh = k * h;
+  const denominator = 1 + k1 * kh + k1 * k2 * kh * kh;
+  const boundWater = kh / Math.max(1e-9, 1 - kh);
+  const dissolvedWater = (k1 * kh + 2 * k1 * k2 * kh * kh) / Math.max(1e-9, denominator);
+  return Math.max(0, (1800 / w) * (boundWater + dissolvedWater));
+}
+
 export function layerResistance(layer) {
   if (!layer.enabled) return { thermal: 0, diffusion: 0 };
 
@@ -196,7 +213,7 @@ const MONTHLY_STORAGE_EPSILON = 0.000001;
 const MONTHLY_BALANCE_TOLERANCE = 0.001;
 const MONTHLY_PRESSURE_TOLERANCE = 0.01;
 
-function emptyMonthlyResult() {
+function emptyMonthlyResult(airTightness = "unknown") {
   return {
     model: "coupled-multiplane",
     hasCalculation: false,
@@ -214,6 +231,14 @@ function emptyMonthlyResult() {
     endingMoistureGm2: 0,
     fullyDries: true,
     cyclesSimulated: 0,
+    woodAssessment: {
+      status: "safe",
+      computedStatus: "safe",
+      governingElement: null,
+      elements: [],
+      airTightness,
+      airLeakageWarning: false,
+    },
   };
 }
 
@@ -443,6 +468,13 @@ function simulateMonth(spatial, month, startingStorageGm2) {
   }
 
   const dryPressures = pressureProfile(nodeStates, spatial.totalDiffusion, insidePressure, outsidePressure, new Set());
+  const finalState = solveMonthlyState(
+    nodeStates,
+    spatial.totalDiffusion,
+    insidePressure,
+    outsidePressure,
+    storageGm2,
+  );
   return {
     ...month,
     condensationGm2,
@@ -450,6 +482,10 @@ function simulateMonth(spatial, month, startingStorageGm2) {
     storageGm2,
     drySaturationRatios: dryPressures.map((pressure, index) => (
       pressure / nodeStates[index].saturationPressure
+    )),
+    temperatures: nodeStates.map((node) => node.temperature),
+    relativeHumidities: finalState.pressures.map((pressure, index) => (
+      Math.min(1, Math.max(0, pressure / nodeStates[index].saturationPressure)) * 100
     )),
   };
 }
@@ -466,6 +502,173 @@ function simulateYear(spatial, monthlyClimate, startingStorageGm2) {
 
 function sum(values) {
   return values.reduce((total, value) => total + value, 0);
+}
+
+function inferredWoodKind(layer) {
+  if (layer.woodKind === "solid" || layer.woodKind === "osb") return layer.woodKind;
+  if (layer.woodKind === "none") return "none";
+  const name = String(layer.name ?? "").toLocaleLowerCase("cs");
+  if (/osb|dřevotří|drevotri/.test(name)) return "osb";
+  if (/dřev|drev|smrk|trám|tram|bedněn|bednen/.test(name)) return "solid";
+  return "none";
+}
+
+function emptyWoodAssessment(airTightness = "unknown") {
+  return {
+    status: "safe",
+    computedStatus: "safe",
+    governingElement: null,
+    elements: [],
+    airTightness,
+    airLeakageWarning: false,
+  };
+}
+
+function calculateWoodAssessment(layerData, spatial, simulation, startingStorageGm2, options = {}) {
+  const airTightness = ["continuous", "uncertain", "leaky"].includes(options.airTightness)
+    ? options.airTightness
+    : "unknown";
+  const woodenLayers = layerData.filter((layer) => inferredWoodKind(layer) !== "none");
+  if (woodenLayers.length === 0) return emptyWoodAssessment(airTightness);
+
+  const elements = woodenLayers.map((layer) => {
+    const woodKind = inferredWoodKind(layer);
+    const configuredDensity = Number(layer.densityKgM3);
+    const configuredInitialMoisture = Number(layer.initialMoisturePercent);
+    const densityKgM3 = Number.isFinite(configuredDensity) && configuredDensity > 0
+      ? Math.max(100, configuredDensity)
+      : woodKind === "osb" ? 600 : 450;
+    const initialMoisturePercent = layer.initialMoisturePercent !== undefined
+      && layer.initialMoisturePercent !== null
+      && Number.isFinite(configuredInitialMoisture)
+      ? Math.max(0, configuredInitialMoisture)
+      : woodKind === "osb" ? 10 : 12;
+    const nodeIndexes = spatial.nodes
+      .filter((node) => node.layerId === layer.id || node.nextLayerId === layer.id)
+      .map((node) => node.index);
+
+    const months = simulation.months.map((month) => {
+      const nodeConditions = nodeIndexes.map((nodeIndex) => {
+        const temperature = month.temperatures[nodeIndex];
+        const relativeHumidity = month.relativeHumidities[nodeIndex];
+        return {
+          nodeIndex,
+          temperature,
+          relativeHumidity,
+          equilibriumMoisturePercent: equilibriumWoodMoisture(temperature, relativeHumidity),
+        };
+      });
+      const worst = nodeConditions.reduce((current, condition) => (
+        !current || condition.equilibriumMoisturePercent > current.equilibriumMoisturePercent
+          ? condition
+          : current
+      ), null);
+      const condensationGm2 = sum(nodeIndexes.map((index) => month.condensationGm2[index]));
+      const evaporationGm2 = sum(nodeIndexes.map((index) => month.evaporationGm2[index]));
+      const storedGm2 = sum(nodeIndexes.map((index) => month.storageGm2[index]));
+      const equilibriumMoisturePercent = worst?.equilibriumMoisturePercent ?? initialMoisturePercent;
+      const status = equilibriumMoisturePercent >= 20
+        ? "risk"
+        : equilibriumMoisturePercent >= 16 || condensationGm2 > MONTHLY_BALANCE_TOLERANCE
+          ? "warning"
+          : "safe";
+      return {
+        id: month.id,
+        month: month.month,
+        days: month.days,
+        temperature: worst?.temperature ?? 0,
+        relativeHumidity: worst?.relativeHumidity ?? 0,
+        equilibriumMoisturePercent,
+        worstPositionMm: worst ? spatial.nodes[worst.nodeIndex].positionMm : 0,
+        condensationGm2,
+        evaporationGm2,
+        storedGm2,
+        status,
+      };
+    });
+    const annualCondensationGm2 = sum(months.map((month) => month.condensationGm2));
+    const annualEvaporationGm2 = sum(months.map((month) => month.evaporationGm2));
+    const startingMoistureGm2 = sum(nodeIndexes.map((index) => startingStorageGm2[index]));
+    const endingMoistureGm2 = months.at(-1)?.storedGm2 ?? 0;
+    const annualChangeGm2 = endingMoistureGm2 - startingMoistureGm2;
+    const peakStoredGm2 = Math.max(startingMoistureGm2, ...months.map((month) => month.storedGm2));
+    const peakEquilibriumMoisturePercent = Math.max(
+      ...months.map((month) => month.equilibriumMoisturePercent),
+    );
+    const daysAbove16Percent = sum(months
+      .filter((month) => month.equilibriumMoisturePercent >= 16)
+      .map((month) => Number(month.days) || 30));
+    const daysAbove20Percent = sum(months
+      .filter((month) => month.equilibriumMoisturePercent >= 20)
+      .map((month) => Number(month.days) || 30));
+    const warmWetDays = sum(months
+      .filter((month) => month.equilibriumMoisturePercent >= 20 && month.temperature >= 5)
+      .map((month) => Number(month.days) || 30));
+    const mouldClimateDays = sum(months
+      .filter((month) => month.relativeHumidity >= 80 && month.temperature >= 0 && month.temperature <= 50)
+      .map((month) => Number(month.days) || 30));
+    const dryMassKgM2 = densityKgM3 * Math.max(0.001, Number(layer.thicknessMm) / 1000 || 0.001);
+    const liquidEquivalentPercent = peakStoredGm2 / (dryMassKgM2 * 1000) * 100;
+    const status = initialMoisturePercent >= 20
+      || annualChangeGm2 > MONTHLY_BALANCE_TOLERANCE
+      || warmWetDays >= 60
+      || (peakEquilibriumMoisturePercent >= 25 && daysAbove20Percent > 0)
+      ? "risk"
+      : annualCondensationGm2 > MONTHLY_BALANCE_TOLERANCE
+        || daysAbove20Percent > 0
+        || daysAbove16Percent >= 30
+        || mouldClimateDays >= 60
+        || initialMoisturePercent >= 16
+        ? "warning"
+        : "safe";
+
+    return {
+      id: layer.id,
+      layerId: layer.id,
+      label: layer.name,
+      woodKind,
+      woodKindLabel: woodKind === "osb" ? "OSB / dřevěná deska" : "Rostlé dřevo",
+      thicknessMm: Number(layer.thicknessMm) || 0,
+      densityKgM3,
+      initialMoisturePercent,
+      peakEquilibriumMoisturePercent,
+      peakRelativeHumidity: Math.max(...months.map((month) => month.relativeHumidity)),
+      daysAbove16Percent,
+      daysAbove20Percent,
+      warmWetDays,
+      mouldClimateDays,
+      annualCondensationGm2,
+      annualEvaporationGm2,
+      annualChangeGm2,
+      peakStoredGm2,
+      liquidEquivalentPercent,
+      hasLiquidContact: annualCondensationGm2 > MONTHLY_BALANCE_TOLERANCE,
+      fullyDries: annualCondensationGm2 <= MONTHLY_BALANCE_TOLERANCE
+        || months.some((month) => month.storedGm2 <= MONTHLY_BALANCE_TOLERANCE),
+      status,
+      months,
+    };
+  });
+
+  const severity = { risk: 2, warning: 1, safe: 0 };
+  const governingElement = [...elements].sort((left, right) => (
+    severity[right.status] - severity[left.status]
+    || right.daysAbove20Percent - left.daysAbove20Percent
+    || right.peakEquilibriumMoisturePercent - left.peakEquilibriumMoisturePercent
+    || right.annualChangeGm2 - left.annualChangeGm2
+  ))[0] ?? null;
+  const computedStatus = governingElement?.status ?? "safe";
+  const airLeakageWarning = airTightness === "leaky" || airTightness === "unknown";
+  const status = airTightness === "leaky" && computedStatus === "safe" ? "warning" : computedStatus;
+
+  return {
+    status,
+    computedStatus,
+    governingElement,
+    elements,
+    airTightness,
+    airLeakageWarning,
+  };
 }
 
 function aggregateMonthlyLocations(spatial, simulation, startingStorageGm2) {
@@ -548,15 +751,22 @@ function aggregateMonthlyLocations(spatial, simulation, startingStorageGm2) {
   ));
 }
 
-export function calculateMonthlyBalance(layers, monthlyClimate, surfaces = { inside: 0.1, outside: 0.04 }) {
+export function calculateMonthlyBalance(
+  layers,
+  monthlyClimate,
+  surfaces = { inside: 0.1, outside: 0.04 },
+  options = {},
+) {
   const activeLayers = layers.filter((layer) => layer.enabled);
   if (activeLayers.length < 2 || !Array.isArray(monthlyClimate) || monthlyClimate.length === 0) {
-    return emptyMonthlyResult();
+    return emptyMonthlyResult(options.airTightness);
   }
 
   const layerData = activeLayers.map((layer) => ({ ...layer, ...layerResistance(layer) }));
   const spatial = buildMonthlyNodes(layerData, surfaces);
-  if (spatial.nodes.length === 0 || spatial.totalDiffusion <= 0) return emptyMonthlyResult();
+  if (spatial.nodes.length === 0 || spatial.totalDiffusion <= 0) {
+    return emptyMonthlyResult(options.airTightness);
+  }
 
   const emptyStorage = new Array(spatial.nodes.length).fill(0);
   const firstYear = simulateYear(spatial, monthlyClimate, emptyStorage);
@@ -590,6 +800,13 @@ export function calculateMonthlyBalance(layers, monthlyClimate, surfaces = { ins
   }
 
   const locations = aggregateMonthlyLocations(spatial, simulation, startingStorageGm2);
+  const woodAssessment = calculateWoodAssessment(
+    layerData,
+    spatial,
+    simulation,
+    startingStorageGm2,
+    options,
+  );
   const months = simulation.months.map((month) => {
     const condensationGm2 = sum(month.condensationGm2);
     const evaporationGm2 = sum(month.evaporationGm2);
@@ -641,5 +858,6 @@ export function calculateMonthlyBalance(layers, monthlyClimate, surfaces = { ins
     fullyDries: annualCondensationGm2 <= MONTHLY_BALANCE_TOLERANCE
       || months.some((month) => month.storedGm2 <= MONTHLY_BALANCE_TOLERANCE),
     cyclesSimulated,
+    woodAssessment,
   };
 }
